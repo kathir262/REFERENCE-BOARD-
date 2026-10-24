@@ -269,7 +269,6 @@ class BeeRefContextMenu:
             op_menu.addAction("Custom Opacity...", lambda: BeeRefContextMenu.show_opacity_dialog(canvas_view, active_items))
 
             menu.addAction("↩ Reset Transforms\tR", lambda: canvas_view.reset_selected_transforms())
-            menu.addAction("🎯 Practice with this Reference\tEnter", lambda: main_window.start_practice_with_item(img.ref_item))
             menu.addSeparator()
         else:
             # Quick Canvas Actions

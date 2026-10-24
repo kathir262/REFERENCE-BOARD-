@@ -307,7 +307,6 @@ class MainWindow(QWidget):
         self.canvas_view.user_activity_detected.connect(self.floating_dock.wake_dock)
         self.action_view.files_dropped.connect(self.handle_incoming_files)
         self.canvas_view.files_dropped.connect(self.handle_incoming_files)
-        self.canvas_view.start_session_with_item.connect(self._on_start_session_with_item)
 
         # Dock actions
         self.floating_dock.play_pause_clicked.connect(self.session_engine.toggle_pause)

@@ -22,7 +22,7 @@ from PySide6.QtGui import (
     QTabletEvent, QPointingDevice, QImage, QPixmap, QTransform,
     QContextMenuEvent
 )
-from PySide6.QtCore import Qt, QRectF, QPointF, Signal, QEvent
+from PySide6.QtCore import Qt, QRectF, QPointF, QPoint, Signal, QEvent
 
 from refpad.models.item import RefItem
 from refpad.ui.canvas_item import CanvasRefItem, CanvasTextItem
@@ -50,9 +50,10 @@ class CanvasView(QGraphicsView):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+        self.setDragMode(QGraphicsView.DragMode.NoDrag)
 
         self.is_panning = False
+        self.is_space_pressed = False
         self.pan_start_pos = QPointF(0, 0)
         self.touch_initial_dist = 0.0
         self.touch_last_center = QPointF(0, 0)
@@ -648,7 +649,7 @@ class CanvasView(QGraphicsView):
                 event.accept()
                 return
 
-        if event.button() == Qt.MouseButton.MiddleButton or (event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.SpaceModifier):
+        if event.button() == Qt.MouseButton.MiddleButton or (event.button() == Qt.MouseButton.LeftButton and getattr(self, 'is_space_pressed', False)):
             self.is_panning = True
             self.pan_start_pos = event.position()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
@@ -657,21 +658,34 @@ class CanvasView(QGraphicsView):
 
         if event.button() == Qt.MouseButton.RightButton:
             self.right_press_pos = event.position()
-            # Immediately select item under right click if not selected
+            # Immediately find and select item under right click if not selected
+            item = self.itemAt(event.position().toPoint())
+            if not item:
+                scene_pos = self.mapToScene(event.position().toPoint())
+                items_here = self.scene.items(scene_pos)
+                for it in items_here:
+                    if isinstance(it, (CanvasRefItem, CanvasTextItem)):
+                        item = it
+                        break
+
+            self.clicked_item_on_right = item if isinstance(item, CanvasRefItem) else None
+            if isinstance(item, (CanvasRefItem, CanvasTextItem)) and not item.isSelected():
+                self.scene.clearSelection()
+                item.setSelected(True)
+            event.accept()
+            return
+
+        if event.button() == Qt.MouseButton.LeftButton:
             item = self.itemAt(event.position().toPoint())
             if not item:
                 scene_pos = self.mapToScene(event.position().toPoint())
                 items_here = self.scene.items(scene_pos)
                 if items_here:
                     item = items_here[0]
-            if isinstance(item, CanvasRefItem) and not item.isSelected():
-                self.scene.clearSelection()
-                item.setSelected(True)
-            elif isinstance(item, CanvasTextItem) and not item.isSelected():
-                self.scene.clearSelection()
-                item.setSelected(True)
-            event.accept()
-            return
+            if item and isinstance(item, (CanvasRefItem, CanvasTextItem)):
+                self.setDragMode(QGraphicsView.DragMode.NoDrag)
+            else:
+                self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
 
         super().mousePressEvent(event)
 
@@ -696,17 +710,21 @@ class CanvasView(QGraphicsView):
         if event.button() == Qt.MouseButton.RightButton:
             delta = event.position() - getattr(self, 'right_press_pos', event.position())
             if math.hypot(delta.x(), delta.y()) < 10:
-                self.show_context_menu_at(event.position().toPoint(), event.globalPosition().toPoint())
+                clicked = getattr(self, 'clicked_item_on_right', None)
+                self.show_context_menu_at(event.position().toPoint(), event.globalPosition().toPoint(), clicked_item=clicked)
             event.accept()
             return
+
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setDragMode(QGraphicsView.DragMode.NoDrag)
 
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):
         self.user_activity_detected.emit()
         item = self.itemAt(event.position().toPoint())
-        if isinstance(item, CanvasRefItem):
-            self.start_session_with_item.emit(item.ref_item)
+        if isinstance(item, (CanvasRefItem, CanvasTextItem)):
+            self.fitInView(item.sceneBoundingRect().adjusted(-60, -60, 60, 60), Qt.AspectRatioMode.KeepAspectRatio)
             event.accept()
             return
         super().mouseDoubleClickEvent(event)
@@ -715,6 +733,11 @@ class CanvasView(QGraphicsView):
         key = event.key()
         ctrl = event.modifiers() & Qt.KeyboardModifier.ControlModifier
         shift = event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+
+        if key == Qt.Key.Key_Space and not event.isAutoRepeat():
+            self.is_space_pressed = True
+            if not self.is_panning:
+                self.setCursor(Qt.CursorShape.OpenHandCursor)
 
         if ctrl and key == Qt.Key.Key_V:
             if self.paste_from_clipboard():
@@ -798,10 +821,6 @@ class CanvasView(QGraphicsView):
                 self.lower_selected_to_bottom()
                 event.accept()
                 return
-            elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                self.start_session_with_item.emit(selected[0].ref_item)
-                event.accept()
-                return
 
         if key in (Qt.Key.Key_1, Qt.Key.Key_F):
             self.fit_all_items()
@@ -817,6 +836,13 @@ class CanvasView(QGraphicsView):
             return
 
         super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+            self.is_space_pressed = False
+            if not self.is_panning:
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().keyReleaseEvent(event)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():

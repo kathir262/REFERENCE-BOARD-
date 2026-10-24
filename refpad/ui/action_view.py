@@ -44,6 +44,7 @@ class ActionView(QWidget):
         self.timer_hud.move(16, 16)
 
         self.right_press_pos = QPointF(0, 0)
+        self.is_space_pressed = False
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(lambda pt: self._show_action_context_menu(self.mapToGlobal(pt)))
 
@@ -214,7 +215,7 @@ class ActionView(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent):
         self.user_activity_detected.emit()
-        if event.button() == Qt.MouseButton.MiddleButton or (event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.SpaceModifier):
+        if event.button() == Qt.MouseButton.MiddleButton or (event.button() == Qt.MouseButton.LeftButton and getattr(self, 'is_space_pressed', False)):
             self.is_panning = True
             self.last_mouse_pos = event.position()
             event.accept()
@@ -245,6 +246,16 @@ class ActionView(QWidget):
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+            self.is_space_pressed = True
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+            self.is_space_pressed = False
+        super().keyReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):
         self.zoom_factor = 1.0
