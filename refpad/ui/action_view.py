@@ -43,6 +43,10 @@ class ActionView(QWidget):
         self.timer_hud = TimerHUD(self)
         self.timer_hud.move(16, 16)
 
+        self.right_press_pos = QPointF(0, 0)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(lambda pt: self._show_action_context_menu(self.mapToGlobal(pt)))
+
     def set_item(self, item: Optional[RefItem]):
         self.current_item = item
         self.cached_pixmap = None
@@ -158,11 +162,67 @@ class ActionView(QWidget):
         self.zoom_factor = max(0.5, min(6.0, self.zoom_factor * factor))
         self.update()
 
+    def _show_action_context_menu(self, global_pos):
+        self.user_activity_detected.emit()
+        from PySide6.QtWidgets import QMenu
+        from refpad.ui.beeref_menu import style_beeref_menu, ShortcutsHelpDialog
+        from refpad.ui.themes import THEMES
+        main_win = self.window()
+
+        menu = QMenu(self)
+        style_beeref_menu(menu)
+
+        if self.current_item:
+            item = self.current_item
+            menu.addAction("🔄 Flip Horizontally\tH", lambda: (item.toggle_flip_h(), self.update()))
+            menu.addAction("🔃 Flip Vertically\tV", lambda: (item.toggle_flip_v(), self.update()))
+            menu.addAction("⟳ Rotate 90° CW", lambda: (item.rotate_cw(), self.update()))
+            menu.addAction("⟲ Rotate 90° CCW", lambda: (item.rotate_ccw(), self.update()))
+            menu.addAction("🌓 Grayscale\tG", lambda: (item.toggle_grayscale(), self.update()))
+            menu.addAction("🔆 Invert Colors\tI", lambda: (item.toggle_invert(), self.update()))
+            menu.addAction("↩ Reset Transforms\tR", lambda: (item.reset_transforms(), setattr(self, 'zoom_factor', 1.0), setattr(self, 'pan_offset', QPointF(0, 0)), self.update()))
+            menu.addSeparator()
+
+        menu.addAction("🖼 Switch to Reference Board\tTab", lambda: getattr(main_win, 'title_bar', None) and main_win.title_bar.set_mode('canvas'))
+        menu.addSeparator()
+
+        eng = getattr(main_win, 'session_engine', None)
+        if eng:
+            menu.addAction("⏯ Play / Pause Timer\tSpace", eng.toggle_pause)
+            menu.addAction("⏭ Next Reference\t→, D", eng.next_pose)
+            menu.addAction("⏮ Previous Reference\t←, A", eng.prev_pose)
+            menu.addAction("🔁 Restart Current Timer\tR", eng.restart_current_pose)
+            menu.addSeparator()
+
+        menu.addAction("📌 Always On Top\tT", lambda: getattr(main_win, 'toggle_always_on_top', lambda: None)())
+        menu.addAction("📁 Load Reference Files / PDF...", lambda: getattr(main_win, 'open_files_dialog', lambda: None)())
+
+        m_themes = menu.addMenu("🎨 Themes")
+        style_beeref_menu(m_themes)
+        for key, pal in THEMES.items():
+            m_themes.addAction(pal.name, lambda k=key: getattr(main_win, 'apply_theme', lambda x: None)(k))
+
+        menu.addSeparator()
+        menu.addAction("❓ Help & Shortcuts\tF1", lambda: ShortcutsHelpDialog(main_win).exec())
+
+        gpos_point = global_pos if isinstance(global_pos, QPoint) else global_pos.toPoint()
+        menu.exec(gpos_point)
+
+    def contextMenuEvent(self, event):
+        self._show_action_context_menu(event.globalPos())
+        event.accept()
+
     def mousePressEvent(self, event: QMouseEvent):
         self.user_activity_detected.emit()
-        if event.button() in (Qt.MouseButton.MiddleButton, Qt.MouseButton.RightButton):
+        if event.button() == Qt.MouseButton.MiddleButton or (event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.SpaceModifier):
             self.is_panning = True
             self.last_mouse_pos = event.position()
+            event.accept()
+            return
+        elif event.button() == Qt.MouseButton.RightButton:
+            self.right_press_pos = event.position()
+            event.accept()
+            return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
@@ -174,8 +234,16 @@ class ActionView(QWidget):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
-        if event.button() in (Qt.MouseButton.MiddleButton, Qt.MouseButton.RightButton):
+        if event.button() == Qt.MouseButton.MiddleButton or self.is_panning:
             self.is_panning = False
+            event.accept()
+            return
+        elif event.button() == Qt.MouseButton.RightButton:
+            delta = event.position() - getattr(self, 'right_press_pos', event.position())
+            if math.hypot(delta.x(), delta.y()) < 10:
+                self._show_action_context_menu(event.globalPosition().toPoint())
+            event.accept()
+            return
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):

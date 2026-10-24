@@ -48,7 +48,7 @@ class TitleBar(QWidget):
         super().__init__(parent)
         self.setFixedHeight(40)
         self.setMouseTracking(True)
-        self.active_mode = "action"
+        self.active_mode = "canvas"
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 4, 10, 4)
@@ -78,7 +78,8 @@ class TitleBar(QWidget):
             b.setCheckable(True)
             mode_layout.addWidget(b)
 
-        self.btn_action.setChecked(True)
+        self.btn_canvas.setChecked(True)
+        self.btn_action.setChecked(False)
         self.btn_action.clicked.connect(lambda: self.set_mode("action"))
         self.btn_canvas.clicked.connect(lambda: self.set_mode("canvas"))
 
@@ -284,6 +285,7 @@ class MainWindow(QWidget):
         self.canvas_view = CanvasView(self)
         self.stacked_views.addWidget(self.action_view)  # 0: Practice
         self.stacked_views.addWidget(self.canvas_view)  # 1: BeeRef Board
+        self.stacked_views.setCurrentIndex(1)
         self.center_layout.addWidget(self.stacked_views)
 
         self.root_layout.addWidget(self.center_container, 1)

@@ -57,7 +57,13 @@ class CanvasView(QGraphicsView):
         self.touch_initial_dist = 0.0
         self.touch_last_center = QPointF(0, 0)
         self.eyedropper_active = False
+        self.right_press_pos = QPointF(0, 0)
         self.setAcceptDrops(True)
+
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(lambda pt: self.show_context_menu_at(pt, self.mapToGlobal(pt)))
+        self.viewport().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.viewport().customContextMenuRequested.connect(lambda pt: self.show_context_menu_at(pt, self.viewport().mapToGlobal(pt)))
 
         self.update_theme_background()
 
@@ -119,27 +125,41 @@ class CanvasView(QGraphicsView):
             self.arrange_optimal(canvas_items)
 
     # =========================================================================
-    # BEE-REF 1-to-1 CONTEXT MENU EVENT
+    # BEE-REF 1-to-1 CONTEXT MENU EVENT & DISPATCH
     # =========================================================================
-    def contextMenuEvent(self, event: QContextMenuEvent):
+    def show_context_menu_at(self, local_pos, global_pos, clicked_item: Optional[CanvasRefItem] = None):
         self.user_activity_detected.emit()
-        # Check what item was clicked
-        item = self.itemAt(event.pos())
-        clicked_ref = None
-        if isinstance(item, CanvasRefItem):
-            clicked_ref = item
-            if not item.isSelected():
-                self.scene.clearSelection()
-                item.setSelected(True)
-        elif isinstance(item, CanvasTextItem):
-            if not item.isSelected():
-                self.scene.clearSelection()
-                item.setSelected(True)
+        pos_point = local_pos if isinstance(local_pos, QPoint) else local_pos.toPoint()
+        gpos_point = global_pos if isinstance(global_pos, QPoint) else global_pos.toPoint()
+
+        if clicked_item is None:
+            item = self.itemAt(pos_point)
+            if not item:
+                # Also check scene items overlapping at this scene pos
+                scene_pos = self.mapToScene(pos_point)
+                items_here = self.scene.items(scene_pos)
+                for it in items_here:
+                    if isinstance(it, (CanvasRefItem, CanvasTextItem)):
+                        item = it
+                        break
+
+            if isinstance(item, CanvasRefItem):
+                clicked_item = item
+                if not item.isSelected():
+                    self.scene.clearSelection()
+                    item.setSelected(True)
+            elif isinstance(item, CanvasTextItem):
+                if not item.isSelected():
+                    self.scene.clearSelection()
+                    item.setSelected(True)
 
         from refpad.ui.beeref_menu import BeeRefContextMenu
         main_win = self.window()
-        menu = BeeRefContextMenu.build_menu(self, self, main_win, clicked_item=clicked_ref)
-        menu.exec(event.globalPos())
+        menu = BeeRefContextMenu.build_menu(self, self, main_win, clicked_item=clicked_item)
+        menu.exec(gpos_point)
+
+    def contextMenuEvent(self, event: QContextMenuEvent):
+        self.show_context_menu_at(event.pos(), event.globalPos())
         event.accept()
 
     # =========================================================================
@@ -635,6 +655,24 @@ class CanvasView(QGraphicsView):
             event.accept()
             return
 
+        if event.button() == Qt.MouseButton.RightButton:
+            self.right_press_pos = event.position()
+            # Immediately select item under right click if not selected
+            item = self.itemAt(event.position().toPoint())
+            if not item:
+                scene_pos = self.mapToScene(event.position().toPoint())
+                items_here = self.scene.items(scene_pos)
+                if items_here:
+                    item = items_here[0]
+            if isinstance(item, CanvasRefItem) and not item.isSelected():
+                self.scene.clearSelection()
+                item.setSelected(True)
+            elif isinstance(item, CanvasTextItem) and not item.isSelected():
+                self.scene.clearSelection()
+                item.setSelected(True)
+            event.accept()
+            return
+
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
@@ -654,6 +692,14 @@ class CanvasView(QGraphicsView):
             self.setCursor(Qt.CursorShape.ArrowCursor)
             event.accept()
             return
+
+        if event.button() == Qt.MouseButton.RightButton:
+            delta = event.position() - getattr(self, 'right_press_pos', event.position())
+            if math.hypot(delta.x(), delta.y()) < 10:
+                self.show_context_menu_at(event.position().toPoint(), event.globalPosition().toPoint())
+            event.accept()
+            return
+
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):

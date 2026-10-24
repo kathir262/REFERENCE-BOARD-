@@ -135,6 +135,26 @@ class CanvasRefItem(QGraphicsItem):
         self.update()
         super().hoverLeaveEvent(event)
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            if not self.isSelected():
+                if self.scene():
+                    self.scene().clearSelection()
+                self.setSelected(True)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def contextMenuEvent(self, event):
+        if not self.isSelected():
+            if self.scene():
+                self.scene().clearSelection()
+            self.setSelected(True)
+        views = self.scene().views() if self.scene() else []
+        if views:
+            views[0].show_context_menu_at(event.pos().toPoint(), event.screenPos(), clicked_item=self)
+        event.accept()
+
 
 class CanvasTextItem(QGraphicsTextItem):
     """Sticky text note on BeeRef canvas."""
