@@ -50,36 +50,29 @@ class CanvasView(QGraphicsView):
         self.touch_last_center = QPointF(0, 0)
         self.setAcceptDrops(True)
 
-    def drawBackground(self, painter: QPainter, rect: QRectF):
-        """Draw subtle dot grid pattern using active theme colors."""
+        self.update_theme_background()
+
+    def update_theme_background(self):
+        """Hardware-accelerated seamless dot grid texture brush (zero CPU loops)."""
         theme = get_current_theme()
-        painter.save()
-        painter.fillRect(rect, QColor(theme.bg_dark))
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        painter.setPen(QColor(theme.dot_grid))
+        pix = QPixmap(40, 40)
+        pix.fill(QColor(theme.bg_dark))
+        p = QPainter(pix)
+        p.setPen(QColor(theme.dot_grid))
+        p.drawPoint(0, 0)
+        p.end()
+        self.setBackgroundBrush(QBrush(pix))
 
-        grid_size = 45
-        left = int(rect.left()) - (int(rect.left()) % grid_size)
-        top = int(rect.top()) - (int(rect.top()) % grid_size)
-
-        points = []
-        x = left
-        while x < rect.right():
-            y = top
-            while y < rect.bottom():
-                points.append(QPointF(x, y))
-                y += grid_size
-            x += grid_size
-
-        if points:
-            painter.drawPoints(points)
-
-        # If canvas is empty, draw clear guide card in the center
+    def drawForeground(self, painter: QPainter, rect: QRectF):
+        """Draw empty state card only when no references exist on board."""
+        super().drawForeground(painter, rect)
         items = [it for it in self.scene.items() if isinstance(it, (CanvasRefItem, CanvasTextItem))]
         if not items:
+            theme = get_current_theme()
+            painter.save()
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             center = self.mapToScene(self.viewport().rect().center())
-            cw, ch = 380, 160
+            cw, ch = 390, 160
             card = QRectF(center.x() - cw / 2, center.y() - ch / 2, cw, ch)
             painter.setBrush(QBrush(QColor(theme.bg_card)))
             painter.setPen(QPen(QColor(theme.border), 1.2))
@@ -87,7 +80,7 @@ class CanvasView(QGraphicsView):
 
             painter.setPen(QColor(theme.text_primary))
             painter.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-            painter.drawText(QRectF(card.left(), card.top() + 16, cw, 28), Qt.AlignmentFlag.AlignCenter, "🖼 BeeRef Board Mode")
+            painter.drawText(QRectF(card.left(), card.top() + 16, cw, 28), Qt.AlignmentFlag.AlignCenter, "🖼 Reference Board Mode")
 
             painter.setPen(QColor(theme.text_muted))
             painter.setFont(QFont("Segoe UI", 10))
@@ -98,8 +91,7 @@ class CanvasView(QGraphicsView):
             painter.setFont(QFont("Segoe UI", 9, QFont.Weight.DemiBold))
             painter.drawText(QRectF(card.left(), card.top() + 106, cw, 22), Qt.AlignmentFlag.AlignCenter,
                              "Middle-Click / Space+Drag: Pan  •  Scroll: Zoom  •  Tab: Practice")
-
-        painter.restore()
+            painter.restore()
 
     def add_ref_items(self, items: List[RefItem], auto_tile: bool = True):
         canvas_items = []

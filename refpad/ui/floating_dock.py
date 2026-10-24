@@ -201,13 +201,13 @@ class FloatingDock(QWidget):
 
         menu_file = menu.addMenu("📁 File")
         self._style_menu(menu_file)
-        menu_file.addAction("Open Board (.refpad / .bee)... (Ctrl+O)", self.open_board_requested.emit)
-        menu_file.addAction("Save Board (Ctrl+S)", self.save_board_requested.emit)
+        menu_file.addAction("Open Reference Board (.refpad / .bee)... (Ctrl+O)", self.open_board_requested.emit)
+        menu_file.addAction("Save Reference Board (Ctrl+S)", self.save_board_requested.emit)
         menu_file.addSeparator()
         menu_file.addAction("Open PDF Reference Book...", self.open_pdf_requested.emit)
         menu_file.addAction("Open Image / PDF Folder...", self.open_folder_requested.emit)
         menu_file.addSeparator()
-        menu_file.addAction("Export Board as Image... (Ctrl+E)", self.export_image_requested.emit)
+        menu_file.addAction("Export Reference Board as Image... (Ctrl+E)", self.export_image_requested.emit)
 
         menu_edit = menu.addMenu("✏️ Edit")
         self._style_menu(menu_edit)

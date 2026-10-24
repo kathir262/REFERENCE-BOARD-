@@ -55,22 +55,22 @@ class TitleBar(QWidget):
         layout.setSpacing(8)
 
         # 1. Left: Drag Grip Handle
-        self.lbl_title = QLabel("⠿ RefPad")
+        self.lbl_title = QLabel("⠿ Reference Board")
         self.lbl_title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        self.lbl_title.setToolTip("Click and drag to move window anywhere on your screen")
+        self.lbl_title.setToolTip("Click and drag anywhere on this bar to move the window")
         self.lbl_title.setCursor(Qt.CursorShape.SizeAllCursor)
         layout.addWidget(self.lbl_title)
 
         layout.addSpacing(6)
 
-        # 2. Center: Mode Switcher (Line of Action vs BeeRef Board)
+        # 2. Center: Mode Switcher (Line of Action Practice vs Reference Board)
         self.mode_container = QWidget()
         mode_layout = QHBoxLayout(self.mode_container)
         mode_layout.setContentsMargins(2, 2, 2, 2)
         mode_layout.setSpacing(2)
 
-        self.btn_action = QPushButton("⏱ Practice (Line of Action)")
-        self.btn_canvas = QPushButton("🖼 BeeRef Board")
+        self.btn_action = QPushButton("⏱ Practice Mode")
+        self.btn_canvas = QPushButton("🖼 Reference Board")
 
         for b in (self.btn_action, self.btn_canvas):
             b.setFixedHeight(28)
@@ -427,6 +427,7 @@ class MainWindow(QWidget):
         self.title_bar.apply_theme()
         self.floating_dock._apply_styles()
         self.action_view.update()
+        self.canvas_view.update_theme_background()
         self.canvas_view.viewport().update()
         self.action_view.timer_hud.update()
         self.update()
