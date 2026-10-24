@@ -38,6 +38,7 @@ class TitleBar(QWidget):
     """
     Visible drag handle at the top of the window.
     Thin strip with grip dots in the center, mode switch centered, close/min on right.
+    Click & drag anywhere on this bar to move the whole window.
     """
     close_clicked = Signal()
     min_clicked = Signal()
@@ -47,6 +48,11 @@ class TitleBar(QWidget):
         self.setFixedHeight(DRAG_HANDLE_H)
         self.setMouseTracking(True)
         self.pill_switch = pill_switch
+
+        # Track drag for moving the window
+        self._drag_active = False
+        self._drag_start_global = QPoint()
+        self._drag_start_win = QPoint()
 
         # Close button
         self.btn_close = QPushButton("✕", self)
@@ -79,37 +85,60 @@ class TitleBar(QWidget):
         """
         self.btn_close.setStyleSheet(base_btn)
         self.btn_min.setStyleSheet(base_btn)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
         self.update()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         w = self.width()
-        # Close far right, min next to it
         self.btn_close.move(w - 28, 5)
         self.btn_min.move(w - 54, 5)
-
-        # Pill switch centered in title bar
         sw = self.pill_switch.sizeHint().width() + 8
         self.pill_switch.setGeometry((w - sw) // 2, 1, sw, DRAG_HANDLE_H - 2)
+
+    # --- Direct drag handlers on the title bar ---
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton:
+            win = self.window()
+            self._drag_active = True
+            self._drag_start_global = event.globalPosition().toPoint()
+            self._drag_start_win = win.pos()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        if self._drag_active:
+            delta = event.globalPosition().toPoint() - self._drag_start_global
+            self.window().move(self._drag_start_win + delta)
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton and self._drag_active:
+            self._drag_active = False
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         theme = get_current_theme()
 
-        # Solid bar background
         painter.fillRect(self.rect(), QColor(theme.bg_card))
 
-        # Bottom border line
+        # Bottom border
         painter.setPen(QPen(QColor(theme.border), 1))
         painter.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
 
-        # Grip dots (centered, left of switch)
-        dot_col = QColor(theme.text_muted)
+        # Grip dots (left side - visual cue for drag)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(dot_col))
-        cx = 28
-        cy = self.height() // 2
+        painter.setBrush(QBrush(QColor(theme.text_muted)))
+        cx, cy = 28, self.height() // 2
         for dx in (-5, 0, 5):
             for dy in (-3, 3):
                 painter.drawEllipse(QRectF(cx + dx - 1.5, cy + dy - 1.5, 3, 3))
@@ -120,9 +149,9 @@ class MainWindow(QWidget):
         super().__init__()
 
         self.setWindowFlags(
+            Qt.WindowType.Window |
             Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.SubWindow
+            Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMouseTracking(True)
@@ -138,11 +167,6 @@ class MainWindow(QWidget):
         self.resizing_edge: Optional[str] = None
         self.resize_start_geometry: Optional[QRect] = None
         self.resize_start_mouse: Optional[QPoint] = None
-
-        # Drag state (from title bar only)
-        self.is_dragging_window: bool = False
-        self.drag_start_global: Optional[QPoint] = None
-        self.drag_start_win_pos: Optional[QPoint] = None
 
         self.current_board_path: Optional[str] = None
 
@@ -235,8 +259,8 @@ class MainWindow(QWidget):
         self.floating_dock.setGeometry((w - dock_w) // 2, h - 60, dock_w, 48)
 
     # ---------------------------------------------------------------
-    # Event filter — runs on MainWindow itself AND all child widgets
-    # to intercept edge/corner resize mouse events.
+    # Event filter — installed on all child widgets to intercept
+    # edge/corner resize. Drag is handled directly in TitleBar.
     # ---------------------------------------------------------------
     def eventFilter(self, watched, event: QEvent) -> bool:
         t = event.type()
@@ -247,21 +271,11 @@ class MainWindow(QWidget):
                 global_pos = ev.globalPosition().toPoint()
                 local_pos = self.mapFromGlobal(global_pos)
                 edge = self._get_edge(local_pos)
-
                 if edge:
-                    # Start resize
                     self.resizing_edge = edge
                     self.resize_start_geometry = self.geometry()
                     self.resize_start_mouse = global_pos
                     self.setCursor(self._cursor_for_edge(edge))
-                    return True
-
-                # Title bar drag
-                if watched is self.title_bar and not edge:
-                    self.is_dragging_window = True
-                    self.drag_start_global = global_pos
-                    self.drag_start_win_pos = self.pos()
-                    self.title_bar.setCursor(Qt.CursorShape.ClosedHandCursor)
                     return True
 
         elif t == QEvent.Type.MouseMove:
@@ -273,26 +287,21 @@ class MainWindow(QWidget):
                 self._perform_resize(global_pos)
                 return True
 
-            if self.is_dragging_window and self.drag_start_global and self.drag_start_win_pos:
-                delta = global_pos - self.drag_start_global
-                self.move(self.drag_start_win_pos + delta)
-                return True
-
-            # Update cursor shape even without pressing (on the outer widget only)
-            if watched is self:
-                edge = self._get_edge(local_pos)
-                self.setCursor(self._cursor_for_edge(edge) if edge else Qt.CursorShape.ArrowCursor)
+            # Update cursor on the main window only (not from child pass-through)
+            edge = self._get_edge(local_pos)
+            if edge:
+                self.setCursor(self._cursor_for_edge(edge))
+                return False  # don't swallow move so children still get it
+            else:
+                if watched is self:
+                    self.setCursor(Qt.CursorShape.ArrowCursor)
 
         elif t == QEvent.Type.MouseButtonRelease:
-            if self.resizing_edge or self.is_dragging_window:
+            if self.resizing_edge:
                 self.resizing_edge = None
                 self.resize_start_geometry = None
                 self.resize_start_mouse = None
-                self.is_dragging_window = False
-                self.drag_start_global = None
-                self.drag_start_win_pos = None
                 self.setCursor(Qt.CursorShape.ArrowCursor)
-                self.title_bar.setCursor(Qt.CursorShape.OpenHandCursor)
                 return True
 
         return super().eventFilter(watched, event)
