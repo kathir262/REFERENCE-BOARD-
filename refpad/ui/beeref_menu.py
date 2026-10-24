@@ -1,7 +1,10 @@
 """
 Complete 1-to-1 BeeRef Context Menu and Action Engine for Reference Board.
-Contains all BeeRef submenus, actions, transforms, arrangements, and shortcuts.
-Pure theme-aware styling with zero purple.
+Accurately split into:
+1. Image Context Menu (Green Circle): Focused image transforms & operations on right-clicking an image.
+2. Dock System Menu (Red Circle): Full BeeRef system menus (File, Edit, View, Insert, Transform, Normalize, Arrange, Images, Practice Mode, Themes, Help) for the bottom dock button.
+3. Canvas Context Menu: Quick canvas actions + system menus when right-clicking empty canvas.
+4. Import Destination Dialog: Clear separation between Reference Board and Practice Mode during PDF / image / folder imports.
 """
 import os
 import math
@@ -9,7 +12,7 @@ from typing import List, Optional
 from PySide6.QtWidgets import (
     QMenu, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSlider,
     QPushButton, QMessageBox, QFileDialog, QTableWidget, QTableWidgetItem,
-    QHeaderView, QApplication
+    QHeaderView, QApplication, QFrame
 )
 from PySide6.QtCore import Qt, QPoint, QPointF
 from PySide6.QtGui import QKeySequence, QFont, QColor
@@ -50,6 +53,82 @@ def style_beeref_menu(menu: QMenu):
             margin: 4px 6px;
         }}
     """)
+
+
+class ImportDestinationDialog(QDialog):
+    """
+    Sleek theme-styled dialog asking whether to import to Reference Board, Practice Mode, or Both.
+    Guarantees that Reference Board and Practice Mode remain separate!
+    """
+    def __init__(self, parent, count: int = 1, current_mode: str = 'canvas'):
+        super().__init__(parent)
+        self.setWindowTitle("Import References")
+        self.setFixedSize(440, 290)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+        self.selected_target = current_mode
+
+        theme = get_current_theme()
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {theme.bg_card};
+                color: {theme.text_primary};
+                border: 1px solid {theme.border};
+                border-radius: 12px;
+            }}
+            QLabel {{
+                color: {theme.text_primary};
+                font-family: 'Segoe UI', -apple-system, sans-serif;
+            }}
+            QPushButton {{
+                background-color: {theme.bg_dark};
+                color: {theme.text_primary};
+                border: 1px solid {theme.border};
+                border-radius: 8px;
+                padding: 10px 16px;
+                font-size: 11px;
+                font-weight: 600;
+                text-align: left;
+            }}
+            QPushButton:hover {{
+                background-color: {theme.accent};
+                color: {theme.bg_dark};
+                border-color: {theme.accent};
+            }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 20)
+        layout.setSpacing(10)
+
+        lbl_title = QLabel(f"Import {count} Reference{'s' if count != 1 else ''}")
+        lbl_title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        layout.addWidget(lbl_title)
+
+        lbl_sub = QLabel("Choose destination mode for imported references:")
+        lbl_sub.setFont(QFont("Segoe UI", 10))
+        lbl_sub.setStyleSheet(f"color: {theme.text_muted};")
+        layout.addWidget(lbl_sub)
+
+        layout.addSpacing(4)
+
+        btn_canvas = QPushButton("🖼  Reference Board\n    Load into the moodboard canvas for arranging, scaling & study")
+        btn_canvas.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_canvas.clicked.connect(lambda: self._choose('canvas'))
+        layout.addWidget(btn_canvas)
+
+        btn_action = QPushButton("⏱  Practice Mode\n    Load into timed gesture drawing session with countdown timer")
+        btn_action.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_action.clicked.connect(lambda: self._choose('action'))
+        layout.addWidget(btn_action)
+
+        btn_both = QPushButton("⚡  Both Modes\n    Load into Reference Board canvas AND Practice session")
+        btn_both.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_both.clicked.connect(lambda: self._choose('both'))
+        layout.addWidget(btn_both)
+
+    def _choose(self, target: str):
+        self.selected_target = target
+        self.accept()
 
 
 class OpacitySliderDialog(QDialog):
@@ -192,6 +271,7 @@ class ShortcutsHelpDialog(QDialog):
         table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
 
         shortcuts = [
+            ("Drag Reference Image", "Left Click & Drag Image"),
             ("Pan Canvas", "Middle Click / Space + Left Drag"),
             ("Zoom In / Out", "Mouse Wheel / Touch Pinch"),
             ("Toggle Mode (Reference Board / Practice)", "Tab"),
@@ -231,61 +311,94 @@ class ShortcutsHelpDialog(QDialog):
 
 class BeeRefContextMenu:
     """
-    Constructs the complete 1-to-1 BeeRef context menu with all submenus and actions.
+    Constructs the exact requested menus:
+    - build_image_menu: The Green Circled menu for right-clicking an image.
+    - build_dock_menu / build_system_menu: The Red Circled menu for the bottom dock button (≡).
+    - build_canvas_menu: For right-clicking empty canvas.
     """
+
     @staticmethod
-    def build_menu(
+    def build_image_menu(
         parent,
         canvas_view,
         main_window,
-        clicked_item: Optional[CanvasRefItem] = None
+        target_item: CanvasRefItem
     ) -> QMenu:
+        """
+        GREEN CIRCLE MENU:
+        Opened strictly when right-clicking on an image reference.
+        Clean, focused, zero clutter.
+        """
+        menu = QMenu(parent)
+        style_beeref_menu(menu)
+
+        selected_items = [it for it in canvas_view.scene.selectedItems() if isinstance(it, CanvasRefItem)]
+        active_items = selected_items if selected_items else [target_item]
+
+        # 1. Flip Horizontally
+        menu.addAction("🔄 Flip Horizontally\tH", lambda: canvas_view.flip_selected(vertical=False))
+        # 2. Flip Vertically
+        menu.addAction("🔃 Flip Vertically\tV", lambda: canvas_view.flip_selected(vertical=True))
+        # 3. Rotate 90° CW
+        menu.addAction("⟳ Rotate 90° CW", lambda: canvas_view.rotate_selected(cw=True))
+        # 4. Rotate 90° CCW
+        menu.addAction("⟲ Rotate 90° CCW", lambda: canvas_view.rotate_selected(cw=False))
+        # 5. Grayscale
+        menu.addAction("🌓 Grayscale\tG", lambda: canvas_view.toggle_grayscale_selected())
+        # 6. Invert Colors
+        menu.addAction("🔆 Invert Colors\tI", lambda: canvas_view.toggle_invert_selected())
+
+        # 7. Opacity Submenu
+        op_menu = menu.addMenu("💧 Opacity")
+        style_beeref_menu(op_menu)
+        for pct in [100, 75, 50, 25]:
+            op_menu.addAction(f"{pct}%", lambda p=pct: canvas_view.set_selected_opacity(p / 100.0))
+        op_menu.addSeparator()
+        op_menu.addAction("Custom Opacity...", lambda: BeeRefContextMenu.show_opacity_dialog(canvas_view, active_items))
+
+        # 8. Reset Transforms
+        menu.addAction("↩ Reset Transforms\tR", lambda: canvas_view.reset_selected_transforms())
+
+        menu.addSeparator()
+
+        # Convenient item actions
+        menu.addAction("📋 Copy Reference\tCtrl+C", canvas_view.copy_selected_to_clipboard)
+        menu.addAction("✂ Cut Reference\tCtrl+X", canvas_view.cut_selected)
+        menu.addAction("🗑 Delete Reference\tDel", canvas_view.delete_selected)
+        menu.addSeparator()
+        menu.addAction("⬆ Raise to Top\tPgUp", canvas_view.raise_selected_to_top)
+        menu.addAction("⬇ Lower to Bottom\tPgDown", canvas_view.lower_selected_to_bottom)
+
+        return menu
+
+    @staticmethod
+    def build_dock_menu(
+        parent,
+        canvas_view,
+        main_window
+    ) -> QMenu:
+        """
+        RED CIRCLE MENU:
+        Opened strictly when clicking the hamburger button (≡) on the bottom floating dock.
+        Full 1-to-1 BeeRef system menu structure.
+        """
         menu = QMenu(parent)
         style_beeref_menu(menu)
 
         selected_items = [it for it in canvas_view.scene.selectedItems() if isinstance(it, CanvasRefItem)]
         has_sel = len(selected_items) > 0
         has_multi = len(selected_items) >= 2
-        active_items = selected_items if has_sel else ([clicked_item] if clicked_item else [])
 
         # =========================================================================
-        # 1. QUICK DIRECT ACTIONS (When clicked on an image or selection)
-        # =========================================================================
-        if active_items:
-            img = active_items[0]
-            menu.addAction("🔄 Flip Horizontally\tH", lambda: canvas_view.flip_selected(vertical=False))
-            menu.addAction("🔃 Flip Vertically\tV", lambda: canvas_view.flip_selected(vertical=True))
-            menu.addAction("⟳ Rotate 90° CW", lambda: canvas_view.rotate_selected(cw=True))
-            menu.addAction("⟲ Rotate 90° CCW", lambda: canvas_view.rotate_selected(cw=False))
-            menu.addAction("🌓 Grayscale\tG", lambda: canvas_view.toggle_grayscale_selected())
-            menu.addAction("🔆 Invert Colors\tI", lambda: canvas_view.toggle_invert_selected())
-
-            # Quick Opacity Submenu
-            op_menu = menu.addMenu("💧 Opacity")
-            style_beeref_menu(op_menu)
-            for pct in [100, 75, 50, 25]:
-                op_menu.addAction(f"{pct}%", lambda p=pct: canvas_view.set_selected_opacity(p / 100.0))
-            op_menu.addSeparator()
-            op_menu.addAction("Custom Opacity...", lambda: BeeRefContextMenu.show_opacity_dialog(canvas_view, active_items))
-
-            menu.addAction("↩ Reset Transforms\tR", lambda: canvas_view.reset_selected_transforms())
-            menu.addSeparator()
-        else:
-            # Quick Canvas Actions
-            menu.addAction("➕ Insert Images / PDF...\tCtrl+I", main_window.open_folder_or_files_dialog)
-            menu.addAction("📝 Add Text Note\tCtrl+T", lambda: canvas_view.add_text_note())
-            menu.addAction("📋 Paste\tCtrl+V", canvas_view.paste_from_clipboard)
-            menu.addAction("🔍 Fit Scene (All)\t1, F", canvas_view.fit_all_items)
-            menu.addSeparator()
-
-        # =========================================================================
-        # 2. FILE SUBMENU (BeeRef 1-to-1)
+        # 1. FILE SUBMENU
         # =========================================================================
         m_file = menu.addMenu("📁 &File")
         style_beeref_menu(m_file)
         m_file.addAction("&New Scene\tCtrl+N", lambda: canvas_view.clear_scene_dialog(main_window))
         m_file.addAction("&Open Board...\tCtrl+O", main_window.open_board_dialog)
-        m_file.addAction("Open Folder / PDF Book...", main_window.open_folder_or_files_dialog)
+        m_file.addSeparator()
+        m_file.addAction("Open PDF Reference Book...", main_window.open_pdf_dialog)
+        m_file.addAction("Open Images / PDF Folder...", main_window.open_folder_dialog)
         m_file.addSeparator()
         m_file.addAction("&Save Board\tCtrl+S", main_window.save_board_dialog)
         m_file.addAction("Save Board &As...\tCtrl+Shift+S", main_window.save_board_as_dialog)
@@ -295,12 +408,12 @@ class BeeRefContextMenu:
         m_file.addAction("&Quit\tCtrl+Q", QApplication.quit)
 
         # =========================================================================
-        # 3. EDIT SUBMENU (BeeRef 1-to-1)
+        # 2. EDIT SUBMENU
         # =========================================================================
         m_edit = menu.addMenu("✏ &Edit")
         style_beeref_menu(m_edit)
-        act_sel_all = m_edit.addAction("&Select All\tCtrl+A", canvas_view.select_all)
-        act_desel = m_edit.addAction("&Deselect All\tCtrl+Shift+A", canvas_view.deselect_all)
+        m_edit.addAction("&Select All\tCtrl+A", canvas_view.select_all)
+        m_edit.addAction("&Deselect All\tCtrl+Shift+A", canvas_view.deselect_all)
         m_edit.addAction("&Invert Selection", canvas_view.invert_selection)
         m_edit.addSeparator()
         act_cut = m_edit.addAction("Cu&t\tCtrl+X", canvas_view.cut_selected)
@@ -311,13 +424,13 @@ class BeeRefContextMenu:
         act_del = m_edit.addAction("&Delete\tDel", canvas_view.delete_selected)
         act_del.setEnabled(has_sel)
         m_edit.addSeparator()
-        act_top = m_edit.addAction("&Raise to Top\tPgUp", lambda: canvas_view.raise_selected_to_top())
+        act_top = m_edit.addAction("&Raise to Top\tPgUp", canvas_view.raise_selected_to_top)
         act_top.setEnabled(has_sel)
-        act_bot = m_edit.addAction("&Lower to Bottom\tPgDown", lambda: canvas_view.lower_selected_to_bottom())
+        act_bot = m_edit.addAction("&Lower to Bottom\tPgDown", canvas_view.lower_selected_to_bottom)
         act_bot.setEnabled(has_sel)
 
         # =========================================================================
-        # 4. VIEW SUBMENU (BeeRef 1-to-1)
+        # 3. VIEW SUBMENU
         # =========================================================================
         m_view = menu.addMenu("👁 &View")
         style_beeref_menu(m_view)
@@ -331,7 +444,7 @@ class BeeRefContextMenu:
         m_view.addAction("Toggle &Scrollbars", canvas_view.toggle_scrollbars)
 
         # =========================================================================
-        # 5. INSERT SUBMENU (BeeRef 1-to-1)
+        # 4. INSERT SUBMENU
         # =========================================================================
         m_insert = menu.addMenu("➕ &Insert")
         style_beeref_menu(m_insert)
@@ -339,7 +452,7 @@ class BeeRefContextMenu:
         m_insert.addAction("&Text Note\tCtrl+T", lambda: canvas_view.add_text_note())
 
         # =========================================================================
-        # 6. TRANSFORM SUBMENU (BeeRef 1-to-1)
+        # 5. TRANSFORM SUBMENU
         # =========================================================================
         m_trans = menu.addMenu("🔀 &Transform")
         style_beeref_menu(m_trans)
@@ -364,7 +477,7 @@ class BeeRefContextMenu:
         act_rall.setEnabled(has_sel)
 
         # =========================================================================
-        # 7. NORMALIZE SUBMENU (BeeRef 1-to-1)
+        # 6. NORMALIZE SUBMENU
         # =========================================================================
         m_norm = menu.addMenu("📏 &Normalize")
         style_beeref_menu(m_norm)
@@ -376,7 +489,7 @@ class BeeRefContextMenu:
         act_ns.setEnabled(has_multi)
 
         # =========================================================================
-        # 8. ARRANGE SUBMENU (BeeRef 1-to-1)
+        # 7. ARRANGE SUBMENU
         # =========================================================================
         m_arr = menu.addMenu("📐 &Arrange")
         style_beeref_menu(m_arr)
@@ -399,11 +512,11 @@ class BeeRefContextMenu:
         act_ab.setEnabled(has_multi)
 
         # =========================================================================
-        # 9. IMAGES SUBMENU (BeeRef 1-to-1)
+        # 8. IMAGES SUBMENU
         # =========================================================================
         m_img = menu.addMenu("🖼 &Images")
         style_beeref_menu(m_img)
-        act_op = m_img.addAction("Change &Opacity...", lambda: BeeRefContextMenu.show_opacity_dialog(canvas_view, active_items))
+        act_op = m_img.addAction("Change &Opacity...", lambda: BeeRefContextMenu.show_opacity_dialog(canvas_view, selected_items))
         act_op.setEnabled(has_sel)
         act_gray = m_img.addAction("&Grayscale\tG", canvas_view.toggle_grayscale_selected)
         act_gray.setEnabled(has_sel)
@@ -413,18 +526,19 @@ class BeeRefContextMenu:
         m_img.addAction("&Sample Color (Eyedropper)\tS", canvas_view.activate_eyedropper_mode)
 
         # =========================================================================
-        # 10. PRACTICE MODE BRIDGE
+        # 9. PRACTICE MODE SUBMENU
         # =========================================================================
         m_prac = menu.addMenu("⏱ &Practice Mode")
         style_beeref_menu(m_prac)
-        act_prac_sel = m_prac.addAction("Practice with &Selected Reference\tEnter",
-            lambda: main_window.start_practice_with_item(active_items[0].ref_item) if active_items else None)
-        act_prac_sel.setEnabled(has_sel)
-        m_prac.addAction("Send &All References to Practice", main_window.send_all_canvas_to_practice)
         m_prac.addAction("Switch to Practice &Mode\tTab", main_window.toggle_view_mode)
+        m_prac.addSeparator()
+        act_send_sel = m_prac.addAction("Send &Selected Reference to Practice",
+            lambda: main_window.start_practice_with_item(selected_items[0].ref_item) if selected_items else None)
+        act_send_sel.setEnabled(has_sel)
+        m_prac.addAction("Send &All Board References to Practice", main_window.send_all_canvas_to_practice)
 
         # =========================================================================
-        # 11. THEMES (Strictly Zero Purple)
+        # 10. THEMES SUBMENU
         # =========================================================================
         m_theme = menu.addMenu("🎨 &Themes")
         style_beeref_menu(m_theme)
@@ -435,7 +549,7 @@ class BeeRefContextMenu:
                 act_th.setChecked(True)
 
         # =========================================================================
-        # 12. HELP SUBMENU
+        # 11. HELP SUBMENU
         # =========================================================================
         m_help = menu.addMenu("❓ &Help")
         style_beeref_menu(m_help)
@@ -450,6 +564,51 @@ class BeeRefContextMenu:
         ))
 
         return menu
+
+    @staticmethod
+    def build_canvas_menu(
+        parent,
+        canvas_view,
+        main_window
+    ) -> QMenu:
+        """
+        Opened when right-clicking on empty space on the canvas.
+        Quick insertion, note, paste + system menu submenus.
+        """
+        menu = QMenu(parent)
+        style_beeref_menu(menu)
+
+        menu.addAction("➕ Insert Images / PDF...\tCtrl+I", main_window.open_folder_or_files_dialog)
+        menu.addAction("📝 Add Text Note\tCtrl+T", lambda: canvas_view.add_text_note())
+        menu.addAction("📋 Paste\tCtrl+V", canvas_view.paste_from_clipboard)
+        menu.addAction("🔍 Fit Scene (All)\t1, F", canvas_view.fit_all_items)
+        menu.addSeparator()
+
+        # Add system submenus from dock menu
+        sys_menu = BeeRefContextMenu.build_dock_menu(parent, canvas_view, main_window)
+        for act in sys_menu.actions():
+            menu.addAction(act)
+
+        return menu
+
+    @staticmethod
+    def build_menu(
+        parent,
+        canvas_view,
+        main_window,
+        clicked_item: Optional[CanvasRefItem] = None
+    ) -> QMenu:
+        """
+        Master builder:
+        - If clicked on an image -> returns build_image_menu (Green Circle)
+        - If clicked on empty canvas -> returns build_canvas_menu
+        """
+        selected_items = [it for it in canvas_view.scene.selectedItems() if isinstance(it, CanvasRefItem)]
+        if clicked_item or selected_items:
+            target = clicked_item or selected_items[0]
+            return BeeRefContextMenu.build_image_menu(parent, canvas_view, main_window, target)
+        else:
+            return BeeRefContextMenu.build_canvas_menu(parent, canvas_view, main_window)
 
     @staticmethod
     def show_opacity_dialog(canvas_view, items: List[CanvasRefItem]):

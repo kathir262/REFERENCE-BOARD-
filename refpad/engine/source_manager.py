@@ -116,7 +116,7 @@ class SourceManager:
                     name=p.name
                 ))
         self.items.extend(new_items)
-        return self.items
+        return new_items
 
     def shuffle_items(self):
         random.shuffle(self.items)

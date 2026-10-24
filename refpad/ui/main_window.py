@@ -518,16 +518,29 @@ class MainWindow(QWidget):
 
         self._apply_loaded_items(items)
 
-    def _apply_loaded_items(self, items: List[RefItem]):
+    def _apply_loaded_items(self, items: List[RefItem], destination: Optional[str] = None):
         if not items:
             QMessageBox.information(self, "No References Found", "No valid image files or PDF pages were found.")
             return
 
-        # 1. Update practice session
-        self.session_engine.set_items(items)
+        if destination is None:
+            from refpad.ui.beeref_menu import ImportDestinationDialog
+            dlg = ImportDestinationDialog(self, count=len(items), current_mode=self.title_bar.active_mode)
+            if dlg.exec():
+                destination = dlg.selected_target
+            else:
+                return
 
-        # 2. Add to BeeRef infinite canvas
-        self.canvas_view.add_ref_items(items, auto_tile=True)
+        if destination in ('canvas', 'both'):
+            self.canvas_view.add_ref_items(items, auto_tile=True)
+            if self.title_bar.active_mode != 'canvas' and destination == 'canvas':
+                self.title_bar.set_mode('canvas')
+
+        if destination in ('action', 'both'):
+            self.source_manager.items = items
+            self.session_engine.set_items(items)
+            if self.title_bar.active_mode != 'action' and destination == 'action':
+                self.title_bar.set_mode('action')
 
     # --- BeeRef Board File I/O ---
     def open_folder_or_files_dialog(self):
@@ -651,7 +664,7 @@ class MainWindow(QWidget):
     def contextMenuEvent(self, event):
         from refpad.ui.beeref_menu import BeeRefContextMenu, style_beeref_menu
         if self.title_bar.active_mode == 'canvas':
-            menu = BeeRefContextMenu.build_menu(self, self.canvas_view, self)
+            menu = BeeRefContextMenu.build_dock_menu(self, self.canvas_view, self)
             menu.exec(event.globalPos())
         else:
             menu = QMenu(self)

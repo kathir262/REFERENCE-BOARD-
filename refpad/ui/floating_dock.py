@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QPushButton, QMenu, QSlider, QFrame, QGraphicsOpacityEffect
 )
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QAction, QFont
-from PySide6.QtCore import Qt, Signal, QRectF, QPropertyAnimation, QEasingCurve, QTimer
+from PySide6.QtCore import Qt, Signal, QPoint, QRectF, QPropertyAnimation, QEasingCurve, QTimer
 
 from refpad.ui.icons import (
     draw_play_icon, draw_pause_icon, draw_skip_next_icon, draw_skip_prev_icon,
@@ -195,13 +195,14 @@ class FloatingDock(QWidget):
         self.pin_toggled.emit(self.is_pinned)
 
     def _show_main_menu(self):
-        """Full BeeRef 1-to-1 Menu with all submenus and actions."""
+        """Full BeeRef 1-to-1 Menu with all submenus and actions (RED CIRCLE MENU)."""
         from refpad.ui.beeref_menu import BeeRefContextMenu
         main_win = self.window()
         canvas = getattr(main_win, 'canvas_view', None)
         if canvas:
-            menu = BeeRefContextMenu.build_menu(self, canvas, main_win)
-            menu.exec(self.btn_menu.mapToGlobal(self.btn_menu.rect().bottomLeft()))
+            menu = BeeRefContextMenu.build_dock_menu(self, canvas, main_win)
+            pos = self.btn_menu.mapToGlobal(QPoint(0, -menu.sizeHint().height()))
+            menu.exec(pos)
 
     def _select_theme(self, key: str):
         set_current_theme(key)

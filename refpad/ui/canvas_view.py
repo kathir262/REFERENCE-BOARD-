@@ -61,10 +61,8 @@ class CanvasView(QGraphicsView):
         self.right_press_pos = QPointF(0, 0)
         self.setAcceptDrops(True)
 
-        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.customContextMenuRequested.connect(lambda pt: self.show_context_menu_at(pt, self.mapToGlobal(pt)))
-        self.viewport().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.viewport().customContextMenuRequested.connect(lambda pt: self.show_context_menu_at(pt, self.viewport().mapToGlobal(pt)))
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
+        self.viewport().setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
 
         self.update_theme_background()
 
@@ -129,6 +127,12 @@ class CanvasView(QGraphicsView):
     # BEE-REF 1-to-1 CONTEXT MENU EVENT & DISPATCH
     # =========================================================================
     def show_context_menu_at(self, local_pos, global_pos, clicked_item: Optional[CanvasRefItem] = None):
+        import time
+        now = time.time()
+        if now - getattr(self, '_last_menu_opened_at', 0) < 0.35:
+            return
+        self._last_menu_opened_at = now
+
         self.user_activity_detected.emit()
         pos_point = local_pos if isinstance(local_pos, QPoint) else local_pos.toPoint()
         gpos_point = global_pos if isinstance(global_pos, QPoint) else global_pos.toPoint()
@@ -153,14 +157,27 @@ class CanvasView(QGraphicsView):
                 if not item.isSelected():
                     self.scene.clearSelection()
                     item.setSelected(True)
+            else:
+                self.scene.clearSelection()
 
         from refpad.ui.beeref_menu import BeeRefContextMenu
         main_win = self.window()
-        menu = BeeRefContextMenu.build_menu(self, self, main_win, clicked_item=clicked_item)
+        if clicked_item:
+            menu = BeeRefContextMenu.build_image_menu(self, self, main_win, clicked_item)
+        else:
+            menu = BeeRefContextMenu.build_canvas_menu(self, self, main_win)
         menu.exec(gpos_point)
 
     def contextMenuEvent(self, event: QContextMenuEvent):
-        self.show_context_menu_at(event.pos(), event.globalPos())
+        item = self.itemAt(event.pos())
+        if not item:
+            scene_pos = self.mapToScene(event.pos())
+            for it in self.scene.items(scene_pos):
+                if isinstance(it, (CanvasRefItem, CanvasTextItem)):
+                    item = it
+                    break
+        clicked_ref = item if isinstance(item, CanvasRefItem) else None
+        self.show_context_menu_at(event.pos(), event.globalPos(), clicked_item=clicked_ref)
         event.accept()
 
     # =========================================================================
