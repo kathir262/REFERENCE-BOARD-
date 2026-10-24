@@ -1,18 +1,24 @@
 """
-Interactive BeeRef Canvas Item: movable, scalable, rotatable, flippable image tile.
+Interactive BeeRef Canvas Item: movable, scalable, rotatable, flippable image tile and text notes.
 """
 from typing import Optional
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsPixmapItem, QStyleOptionGraphicsItem, QWidget
-from PySide6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QFont, QTransform
+from PySide6.QtWidgets import (
+    QGraphicsItem, QGraphicsTextItem, QStyleOptionGraphicsItem, QWidget
+)
+from PySide6.QtGui import (
+    QPainter, QPixmap, QColor, QPen, QBrush, QFont, QTransform
+)
 from PySide6.QtCore import Qt, QRectF, QPointF
 
 from refpad.models.item import RefItem
+from refpad.ui.themes import get_current_theme
 
 class CanvasRefItem(QGraphicsItem):
     def __init__(self, ref_item: RefItem, parent=None):
         super().__init__(parent)
         self.ref_item = ref_item
         self.pixmap: Optional[QPixmap] = ref_item.get_transformed_pixmap()
+        self.item_opacity: float = 1.0
 
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsMovable |
@@ -38,37 +44,40 @@ class CanvasRefItem(QGraphicsItem):
 
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.setOpacity(self.item_opacity)
 
-        # Draw pixmap
+        theme = get_current_theme()
+
+        # Draw image
         painter.drawPixmap(0, 0, self.pixmap)
 
-        # Selection or hover highlight
         rect = self.boundingRect()
         if self.isSelected():
-            pen = QPen(QColor(126, 87, 246, 230), 3)  # Bright accent purple
+            accent_col = QColor(theme.accent)
+            pen = QPen(accent_col, 2.5)
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(rect)
 
             # Draw corner grip handles
-            handle_size = 10
-            painter.setBrush(QBrush(QColor(255, 255, 255)))
-            painter.setPen(QPen(QColor(126, 87, 246), 1.5))
+            handle_size = 9
+            painter.setBrush(QBrush(accent_col))
+            painter.setPen(QPen(QColor(0, 0, 0, 160), 1))
             for pt in [rect.topLeft(), rect.topRight(), rect.bottomLeft(), rect.bottomRight()]:
                 painter.drawRect(QRectF(pt.x() - handle_size / 2, pt.y() - handle_size / 2, handle_size, handle_size))
 
-            # Name badge on top
-            badge_rect = QRectF(0, -24, min(300, max(120, len(self.ref_item.name) * 8)), 20)
-            painter.setBrush(QBrush(QColor(20, 22, 28, 220)))
-            painter.setPen(QPen(QColor(126, 87, 246, 180), 1))
+            # Floating name badge
+            badge_w = min(320.0, max(100.0, len(self.ref_item.name) * 7.5 + 16))
+            badge_rect = QRectF(0, -22, badge_w, 18)
+            painter.setBrush(QBrush(QColor(theme.bg_card)))
+            painter.setPen(QPen(accent_col, 1))
             painter.drawRoundedRect(badge_rect, 4, 4)
-            painter.setPen(QColor(240, 240, 245))
-            painter.setFont(QFont("Segoe UI", 8, QFont.Weight.DemiBold))
+            painter.setPen(QColor(theme.text_primary))
+            painter.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
             painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, self.ref_item.name)
 
         elif self.is_hovered:
-            pen = QPen(QColor(255, 255, 255, 70), 1.5)
-            painter.setPen(pen)
+            painter.setPen(QPen(QColor(255, 255, 255, 60), 1.2))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(rect)
 
@@ -81,3 +90,28 @@ class CanvasRefItem(QGraphicsItem):
         self.is_hovered = False
         self.update()
         super().hoverLeaveEvent(event)
+
+
+class CanvasTextItem(QGraphicsTextItem):
+    """Sticky text note on BeeRef canvas."""
+    def __init__(self, text: str = "Note...", parent=None):
+        super().__init__(text, parent)
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsMovable |
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable |
+            QGraphicsItem.GraphicsItemFlag.ItemIsFocusable
+        )
+        self.setTextInteractionFlags(Qt.TextInteractionFlag.TextEditorInteraction)
+        self.setFont(QFont("Segoe UI", 14, QFont.Weight.DemiBold))
+        self.setDefaultTextColor(QColor(240, 240, 245))
+
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: Optional[QWidget] = None):
+        # Draw translucent background pill behind text note
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.boundingRect()
+        painter.setBrush(QBrush(QColor(24, 26, 32, 210)))
+        theme = get_current_theme()
+        pen_col = QColor(theme.accent) if self.isSelected() else QColor(255, 255, 255, 30)
+        painter.setPen(QPen(pen_col, 1.2))
+        painter.drawRoundedRect(rect, 6, 6)
+        super().paint(painter, option, widget)

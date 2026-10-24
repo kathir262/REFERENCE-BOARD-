@@ -7,6 +7,7 @@ from PySide6.QtGui import (
     QPainter, QColor, QPen, QFont, QBrush, QConicalGradient, QMouseEvent
 )
 from PySide6.QtCore import Qt, QRectF, QPointF
+from refpad.ui.themes import get_current_theme
 
 class TimerHUD(QWidget):
     def __init__(self, parent=None):
@@ -72,10 +73,12 @@ class TimerHUD(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
+        theme = get_current_theme()
+
         # 1. Frosted glass card backing
         bg_rect = QRectF(2, 2, self.width() - 4, self.height() - 4)
-        painter.setBrush(QBrush(QColor(16, 18, 24, 225)))
-        painter.setPen(QPen(QColor(255, 255, 255, 25), 1.2))
+        painter.setBrush(QBrush(QColor(theme.bg_card)))
+        painter.setPen(QPen(QColor(theme.border), 1.2))
         painter.drawRoundedRect(bg_rect, 14, 14)
 
         # 2. Ring geometry
@@ -85,7 +88,7 @@ class TimerHUD(QWidget):
         ring_rect = QRectF(center_x - radius, center_y - radius, radius * 2, radius * 2)
 
         # Background track
-        pen_track = QPen(QColor(255, 255, 255, 28), 4.5)
+        pen_track = QPen(QColor(theme.ring_track), 4.5)
         pen_track.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(pen_track)
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -96,13 +99,13 @@ class TimerHUD(QWidget):
         start_angle = 90 * 16
 
         if self.remaining_seconds <= 10.0:
-            arc_color = QColor(255, 85, 85)     # Glowing alert red
+            arc_color = QColor(255, 75, 75)
         elif self.remaining_seconds <= 30.0:
-            arc_color = QColor(255, 160, 50)    # Warning orange
+            arc_color = QColor(255, 155, 45)
         elif self.is_paused:
-            arc_color = QColor(130, 140, 155)   # Muted slate
+            arc_color = QColor(theme.text_muted)
         else:
-            arc_color = QColor(126, 87, 246)    # Radiant electric violet
+            arc_color = QColor(theme.accent)
 
         pen_arc = QPen(arc_color, 4.8)
         pen_arc.setCapStyle(Qt.PenCapStyle.RoundCap)
@@ -115,7 +118,7 @@ class TimerHUD(QWidget):
         seconds = total_sec % 60
         time_text = f"{minutes}:{seconds:02d}"
 
-        painter.setPen(QColor(245, 248, 255))
+        painter.setPen(QColor(theme.text_primary))
         font_digits = QFont("Segoe UI", 13, QFont.Weight.Bold)
         font_digits.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
         painter.setFont(font_digits)
@@ -130,11 +133,11 @@ class TimerHUD(QWidget):
             badge_text = f"{self.duration_seconds}s POSE"
 
         badge_rect = QRectF(10, 88, self.width() - 20, 18)
-        painter.setBrush(QBrush(QColor(126, 87, 246, 35)))
-        painter.setPen(QPen(QColor(126, 87, 246, 80), 0.8))
+        painter.setBrush(QBrush(QColor(255, 255, 255, 18)))
+        painter.setPen(QPen(QColor(theme.border), 0.8))
         painter.drawRoundedRect(badge_rect, 5, 5)
 
-        painter.setPen(QColor(180, 160, 255))
+        painter.setPen(QColor(theme.accent))
         font_badge = QFont("Segoe UI", 8, QFont.Weight.DemiBold)
         font_badge.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.4)
         painter.setFont(font_badge)
@@ -142,7 +145,7 @@ class TimerHUD(QWidget):
 
         # 5. Pose Counter: "Pose 3 of 20"
         count_text = f"Pose {self.pose_index + 1} / {max(1, self.total_poses)}"
-        painter.setPen(QColor(140, 150, 165))
+        painter.setPen(QColor(theme.text_muted))
         font_count = QFont("Segoe UI", 8)
         painter.setFont(font_count)
         painter.drawText(QRectF(10, 110, self.width() - 20, 16), Qt.AlignmentFlag.AlignCenter, count_text)

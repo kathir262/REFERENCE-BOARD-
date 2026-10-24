@@ -14,26 +14,34 @@ except ImportError:
 
 @dataclass
 class RefItem:
-    source_type: str  # 'file' or 'pdf'
-    file_path: str
+    source_type: str  # 'file', 'pdf', or 'clipboard'
+    file_path: str = ""
     page_num: int = 0
     name: str = ""
     is_flipped_h: bool = False
     is_grayscale: bool = False
     is_silhouette: bool = False
+    in_memory_pixmap: Optional[QPixmap] = None
     _cached_pixmap: Optional[QPixmap] = None
     _cached_transform_key: str = ""
 
     def __post_init__(self):
         if not self.name:
-            p = Path(self.file_path)
-            if self.source_type == 'pdf':
-                self.name = f"{p.name} (p. {self.page_num + 1})"
+            if self.source_type == 'clipboard':
+                self.name = "Pasted Reference"
+            elif self.file_path:
+                p = Path(self.file_path)
+                if self.source_type == 'pdf':
+                    self.name = f"{p.name} (p. {self.page_num + 1})"
+                else:
+                    self.name = p.name
             else:
-                self.name = p.name
+                self.name = "Reference Item"
 
     def get_base_pixmap(self, max_dim: int = 2560) -> Optional[QPixmap]:
         """Loads and returns the base unmodified QPixmap."""
+        if self.in_memory_pixmap is not None:
+            return self.in_memory_pixmap
         if self.source_type == 'pdf':
             try:
                 doc = pymupdf.open(self.file_path)

@@ -1,6 +1,6 @@
 """
 Floating Glass Toolbar / Dock:
-Modern floating pill dock with frosted glass aesthetics and auto-fade.
+Integrated with Full BeeRef Operations, Menu Bar (☰), Theme Switcher, and auto-dim.
 """
 from typing import Callable, List, Tuple
 from PySide6.QtWidgets import (
@@ -14,6 +14,7 @@ from refpad.ui.icons import (
     draw_flip_icon, draw_grayscale_icon, draw_pin_icon
 )
 from refpad.ui.widgets import GlassIconButton
+from refpad.ui.themes import get_current_theme, set_current_theme, THEMES
 
 class FloatingDock(QWidget):
     play_pause_clicked = Signal()
@@ -21,13 +22,19 @@ class FloatingDock(QWidget):
     prev_clicked = Signal()
     flip_clicked = Signal()
     grayscale_clicked = Signal()
-    silhouette_clicked = Signal()
     duration_selected = Signal(int)
     ladder_selected = Signal(list)
     open_folder_requested = Signal()
     open_pdf_requested = Signal()
+    save_board_requested = Signal()
+    open_board_requested = Signal()
+    export_image_requested = Signal()
+    paste_requested = Signal()
+    add_note_requested = Signal()
+    align_requested = Signal(str)
+    normalize_requested = Signal(str)
+    theme_changed = Signal(str)
     pin_toggled = Signal(bool)
-    opacity_changed = Signal(float)
     fit_all_clicked = Signal()
     auto_arrange_clicked = Signal()
 
@@ -38,26 +45,32 @@ class FloatingDock(QWidget):
         self.is_pinned = True
         self.mode = "action"
 
-        # Smooth auto-fade effect
         self.opacity_effect = QGraphicsOpacityEffect(self)
-        self.opacity_effect.setOpacity(0.95)
+        self.opacity_effect.setOpacity(0.96)
         self.setGraphicsEffect(self.opacity_effect)
 
         self.fade_anim = QPropertyAnimation(self.opacity_effect, b"opacity")
         self.fade_anim.setDuration(250)
         self.fade_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
 
-        # Idle timer to auto-dim when artist is drawing
         self.idle_timer = QTimer(self)
-        self.idle_timer.setInterval(3500)
+        self.idle_timer.setInterval(4000)
         self.idle_timer.timeout.connect(self._dim_dock)
 
         self._init_ui()
 
     def _init_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(6)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(5)
+
+        # 0. Menu Bar Button (☰ All BeeRef & App Options)
+        self.btn_menu = QPushButton("☰")
+        self.btn_menu.setFixedSize(34, 34)
+        self.btn_menu.setToolTip("Main Menu (File, Edit, Arrange, Themes, Window)")
+        self.btn_menu.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_menu.clicked.connect(self._show_main_menu)
+        layout.addWidget(self.btn_menu)
 
         # 1. Line of Action Playback Icons
         self.btn_prev = GlassIconButton(draw_skip_prev_icon, "Previous Pose (Left Arrow / A)")
@@ -73,7 +86,7 @@ class FloatingDock(QWidget):
         layout.addWidget(self.btn_play)
         layout.addWidget(self.btn_next)
 
-        # 2. Timer Duration Pill Button (opens popup menu)
+        # 2. Timer Duration Pill Button
         self.btn_duration = QPushButton("2 min ▾")
         self.btn_duration.setFixedHeight(34)
         self.btn_duration.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -87,7 +100,7 @@ class FloatingDock(QWidget):
         self.sep.setStyleSheet("color: rgba(255, 255, 255, 25); margin: 6px 2px;")
         layout.addWidget(self.sep)
 
-        # 3. Artist Power Tools: Flip, Grayscale, Silhouette
+        # 3. Artist Power Tools: Flip, Grayscale
         self.btn_flip = GlassIconButton(draw_flip_icon, "Mirror Horizontally (H)")
         self.btn_flip.clicked.connect(self.flip_clicked.emit)
 
@@ -101,25 +114,25 @@ class FloatingDock(QWidget):
         self.btn_fit = QPushButton("⛶ Fit")
         self.btn_fit.setFixedHeight(34)
         self.btn_fit.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_fit.setToolTip("Fit All References in View (F)")
+        self.btn_fit.setToolTip("Fit All References (F)")
         self.btn_fit.clicked.connect(self.fit_all_clicked.emit)
 
-        self.btn_grid = QPushButton("⊞ Tile")
+        self.btn_grid = QPushButton("⊞ Pack")
         self.btn_grid.setFixedHeight(34)
         self.btn_grid.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_grid.setToolTip("Auto-Tile Grid")
+        self.btn_grid.setToolTip("Pack & Tile References (P)")
         self.btn_grid.clicked.connect(self.auto_arrange_clicked.emit)
 
         layout.addWidget(self.btn_fit)
         layout.addWidget(self.btn_grid)
 
-        # Separator
+        # Separator 2
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.VLine)
         sep2.setStyleSheet("color: rgba(255, 255, 255, 25); margin: 6px 2px;")
         layout.addWidget(sep2)
 
-        # 5. Ingestion Buttons: Folder, PDF
+        # 5. Quick Sources: Folder, PDF, Save
         self.btn_folder = QPushButton("📁")
         self.btn_folder.setFixedSize(34, 34)
         self.btn_folder.setToolTip("Open Image Folder")
@@ -127,12 +140,12 @@ class FloatingDock(QWidget):
         self.btn_folder.clicked.connect(self.open_folder_requested.emit)
         layout.addWidget(self.btn_folder)
 
-        self.btn_pdf = QPushButton("📄")
-        self.btn_pdf.setFixedSize(34, 34)
-        self.btn_pdf.setToolTip("Open Art or Anatomy PDF")
-        self.btn_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_pdf.clicked.connect(self.open_pdf_requested.emit)
-        layout.addWidget(self.btn_pdf)
+        self.btn_save = QPushButton("💾")
+        self.btn_save.setFixedSize(34, 34)
+        self.btn_save.setToolTip("Save Board File (.refpad / .bee) (Ctrl+S)")
+        self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_save.clicked.connect(self.save_board_requested.emit)
+        layout.addWidget(self.btn_save)
 
         # 6. Always-on-top Pin
         self.btn_pin = GlassIconButton(
@@ -175,27 +188,69 @@ class FloatingDock(QWidget):
         self.btn_pin.setActive(self.is_pinned)
         self.pin_toggled.emit(self.is_pinned)
 
+    def _show_main_menu(self):
+        """Full BeeRef Menu: File, Edit, Arrange, Themes, Window."""
+        menu = QMenu(self)
+        self._style_menu(menu)
+
+        # --- File Submenu ---
+        menu_file = menu.addMenu("📁 File")
+        self._style_menu(menu_file)
+        menu_file.addAction("New Board", self._on_new_board)
+        menu_file.addAction("Open Board (.refpad / .bee)... (Ctrl+O)", self.open_board_requested.emit)
+        menu_file.addAction("Save Board (Ctrl+S)", self.save_board_requested.emit)
+        menu_file.addSeparator()
+        menu_file.addAction("Open Image Folder...", self.open_folder_requested.emit)
+        menu_file.addAction("Open PDF Reference Book...", self.open_pdf_requested.emit)
+        menu_file.addSeparator()
+        menu_file.addAction("Export Board as Image... (Ctrl+E)", self.export_image_requested.emit)
+
+        # --- Edit Submenu ---
+        menu_edit = menu.addMenu("✏️ Edit")
+        self._style_menu(menu_edit)
+        menu_edit.addAction("Paste Image from Clipboard (Ctrl+V)", self.paste_requested.emit)
+        menu_edit.addAction("Add Sticky Text Note (Ctrl+N)", self.add_note_requested.emit)
+
+        # --- Arrange Submenu (BeeRef powers) ---
+        menu_arrange = menu.addMenu("📐 Arrange & Align")
+        self._style_menu(menu_arrange)
+        menu_arrange.addAction("Pack & Auto-Tile (P)", self.auto_arrange_clicked.emit)
+        menu_arrange.addSeparator()
+        menu_arrange.addAction("Align Left", lambda: self.align_requested.emit('left'))
+        menu_arrange.addAction("Align Right", lambda: self.align_requested.emit('right'))
+        menu_arrange.addAction("Align Top", lambda: self.align_requested.emit('top'))
+        menu_arrange.addAction("Align Bottom", lambda: self.align_requested.emit('bottom'))
+        menu_arrange.addAction("Align Center Horizontal (Row)", lambda: self.align_requested.emit('center_h'))
+        menu_arrange.addAction("Align Center Vertical (Column)", lambda: self.align_requested.emit('center_v'))
+        menu_arrange.addSeparator()
+        menu_arrange.addAction("Normalize Height (Same Height)", lambda: self.normalize_requested.emit('height'))
+        menu_arrange.addAction("Normalize Width (Same Width)", lambda: self.normalize_requested.emit('width'))
+
+        # --- Themes Submenu ---
+        menu_themes = menu.addMenu("🎨 Themes")
+        self._style_menu(menu_themes)
+        for key, pal in THEMES.items():
+            action = menu_themes.addAction(pal.name)
+            action.triggered.connect(lambda chk=False, k=key: self._select_theme(k))
+
+        menu.addSeparator()
+        menu.addAction("Fit All in View (F)", self.fit_all_clicked.emit)
+
+        menu.exec(self.btn_menu.mapToGlobal(self.btn_menu.rect().bottomLeft()))
+
+    def _select_theme(self, key: str):
+        set_current_theme(key)
+        self._apply_styles()
+        self.theme_changed.emit(key)
+        self.update()
+
+    def _on_new_board(self):
+        # Clear canvas
+        pass
+
     def _show_duration_menu(self):
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #1a1c23;
-                color: #e6edf3;
-                border: 1px solid rgba(255, 255, 255, 30);
-                border-radius: 8px;
-                padding: 4px;
-            }
-            QMenu::item {
-                padding: 6px 18px;
-                border-radius: 4px;
-                font-family: 'Segoe UI', -apple-system;
-                font-size: 11px;
-            }
-            QMenu::item:selected {
-                background-color: #7e57f6;
-                color: #ffffff;
-            }
-        """)
+        self._style_menu(menu)
 
         options = [
             ("30 seconds", 30),
@@ -228,7 +283,7 @@ class FloatingDock(QWidget):
     def _dim_dock(self):
         self.fade_anim.stop()
         self.fade_anim.setStartValue(self.opacity_effect.opacity())
-        self.fade_anim.setEndValue(0.20)  # Gentle ghosting so artist sees art unobstructed
+        self.fade_anim.setEndValue(0.18)
         self.fade_anim.start()
 
     def wake_dock(self):
@@ -242,35 +297,65 @@ class FloatingDock(QWidget):
         self.wake_dock()
         super().enterEvent(event)
 
-    def _apply_styles(self):
-        btn_style = """
-            QPushButton {
-                background-color: rgba(255, 255, 255, 10);
-                border: 1px solid rgba(255, 255, 255, 20);
+    def _style_menu(self, menu: QMenu):
+        theme = get_current_theme()
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: {theme.bg_card};
+                color: {theme.text_primary};
+                border: 1px solid {theme.border};
                 border-radius: 8px;
-                color: #e6edf3;
+                padding: 4px;
+            }}
+            QMenu::item {{
+                padding: 6px 18px;
+                border-radius: 4px;
+                font-family: 'Segoe UI', -apple-system;
+                font-size: 11px;
+            }}
+            QMenu::item:selected {{
+                background-color: {theme.accent};
+                color: #000000 if "{theme.accent}" == "#ffffff" else #ffffff;
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background: {theme.border};
+                margin: 4px 6px;
+            }}
+        """)
+
+    def _apply_styles(self):
+        theme = get_current_theme()
+        btn_style = f"""
+            QPushButton {{
+                background-color: rgba(255, 255, 255, 10);
+                border: 1px solid {theme.border};
+                border-radius: 8px;
+                color: {theme.text_primary};
                 font-family: 'Segoe UI', -apple-system;
                 font-size: 11px;
                 font-weight: 600;
                 padding: 0 10px;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: rgba(255, 255, 255, 24);
-                color: #ffffff;
-                border-color: rgba(255, 255, 255, 40);
-            }
+                color: {theme.accent};
+                border-color: {theme.accent};
+            }}
         """
+        self.btn_menu.setStyleSheet(btn_style)
         self.btn_duration.setStyleSheet(btn_style)
         self.btn_fit.setStyleSheet(btn_style)
         self.btn_grid.setStyleSheet(btn_style)
         self.btn_folder.setStyleSheet(btn_style)
-        self.btn_pdf.setStyleSheet(btn_style)
+        self.btn_save.setStyleSheet(btn_style)
+        self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(0, 0, self.width(), self.height())
-        # Frosted glass floating pill background with subtle glow border
-        painter.setBrush(QBrush(QColor(16, 18, 24, 235)))
-        painter.setPen(QPen(QColor(255, 255, 255, 28), 1.2))
+        theme = get_current_theme()
+        painter.setBrush(QBrush(QColor(theme.bg_card)))
+        painter.setPen(QPen(QColor(theme.border), 1.2))
         painter.drawRoundedRect(rect, 14, 14)

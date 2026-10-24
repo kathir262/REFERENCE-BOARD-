@@ -1,25 +1,29 @@
 """
-BeeRef Infinite Canvas View (Modern 2D Moodboard).
-Full-bleed infinite canvas with subtle dot grid, smooth pinch-to-zoom,
-and multi-item drag & drop arrangement.
+BeeRef Infinite Canvas View (Full-Featured).
+Supports clipboard paste (Ctrl+V), text notes, packing, alignment,
+normalization, eyedropper color picker, and high-res export.
 """
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import math
-from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QWidget
+from PySide6.QtWidgets import (
+    QGraphicsView, QGraphicsScene, QWidget, QApplication, QFileDialog, QMessageBox
+)
 from PySide6.QtGui import (
     QPainter, QColor, QPen, QBrush, QWheelEvent, QMouseEvent,
     QKeyEvent, QDragEnterEvent, QDropEvent, QFont, QTouchEvent,
-    QTabletEvent, QPointingDevice
+    QTabletEvent, QPointingDevice, QImage, QPixmap
 )
 from PySide6.QtCore import Qt, QRectF, QPointF, Signal, QEvent
 
 from refpad.models.item import RefItem
-from refpad.ui.canvas_item import CanvasRefItem
+from refpad.ui.canvas_item import CanvasRefItem, CanvasTextItem
+from refpad.ui.themes import get_current_theme
 
 class CanvasView(QGraphicsView):
     files_dropped = Signal(list)
     start_session_with_item = Signal(object)
     user_activity_detected = Signal()
+    color_sampled = Signal(str)  # HEX color string
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -39,9 +43,6 @@ class CanvasView(QGraphicsView):
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
 
-        # Deep slate background
-        self.setBackgroundBrush(QBrush(QColor(14, 15, 20)))
-
         self.is_panning = False
         self.pan_start_pos = QPointF(0, 0)
         self.touch_initial_dist = 0.0
@@ -49,13 +50,14 @@ class CanvasView(QGraphicsView):
         self.setAcceptDrops(True)
 
     def drawBackground(self, painter: QPainter, rect: QRectF):
-        """Draw subtle dot grid pattern on infinite canvas."""
-        super().drawBackground(painter, rect)
+        """Draw subtle dot grid pattern using active theme colors."""
+        theme = get_current_theme()
         painter.save()
+        painter.fillRect(rect, QColor(theme.bg_dark))
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        painter.setPen(QColor(255, 255, 255, 12))
+        painter.setPen(QColor(theme.dot_grid))
 
-        grid_size = 50
+        grid_size = 45
         left = int(rect.left()) - (int(rect.left()) % grid_size)
         top = int(rect.top()) - (int(rect.top()) % grid_size)
 
@@ -82,13 +84,59 @@ class CanvasView(QGraphicsView):
         if auto_tile and canvas_items:
             self.auto_arrange_items(canvas_items)
 
+    # 1. Clipboard Paste (Ctrl+V) & Copy (Ctrl+C)
+    def paste_from_clipboard(self):
+        """Paste image or text from clipboard onto canvas."""
+        clipboard = QApplication.clipboard()
+        mime = clipboard.mimeData()
+
+        if mime.hasImage():
+            img = clipboard.image()
+            if not img.isNull():
+                pix = QPixmap.fromImage(img)
+                ref = RefItem(source_type='clipboard', in_memory_pixmap=pix, name=f"Pasted Image ({pix.width()}x{pix.height()})")
+                c_item = CanvasRefItem(ref)
+                # Place at center of current view
+                view_center = self.mapToScene(self.viewport().rect().center())
+                c_item.setPos(view_center.x() - pix.width() / 2, view_center.y() - pix.height() / 2)
+                self.scene.addItem(c_item)
+                # Select only this item
+                self.scene.clearSelection()
+                c_item.setSelected(True)
+                return True
+        elif mime.hasText():
+            text = clipboard.text().strip()
+            if text:
+                self.add_text_note(text)
+                return True
+        return False
+
+    def copy_selected_to_clipboard(self):
+        selected = [it for it in self.scene.selectedItems() if isinstance(it, CanvasRefItem)]
+        if selected:
+            pix = selected[0].ref_item.get_transformed_pixmap()
+            if pix and not pix.isNull():
+                QApplication.clipboard().setPixmap(pix)
+
+    # 2. Sticky Notes
+    def add_text_note(self, text: str = "Note..."):
+        view_center = self.mapToScene(self.viewport().rect().center())
+        note = CanvasTextItem(text)
+        note.setPos(view_center)
+        self.scene.addItem(note)
+        self.scene.clearSelection()
+        note.setSelected(True)
+        note.setFocus()
+
+    # 3. BeeRef Layout Operations: Pack & Align
     def auto_arrange_items(self, items: Optional[List[CanvasRefItem]] = None):
+        """Pack items into a neat grid."""
         if items is None:
             items = [it for it in self.scene.items() if isinstance(it, CanvasRefItem)]
         if not items:
             return
 
-        spacing = 40
+        spacing = 30
         x_cursor = 0
         y_cursor = 0
         row_max_h = 0
@@ -107,13 +155,106 @@ class CanvasView(QGraphicsView):
 
         self.fit_all_items()
 
+    def align_selected(self, mode: str):
+        """Align selected items: 'left', 'right', 'top', 'bottom', 'center_h', 'center_v'."""
+        selected = [it for it in self.scene.selectedItems() if isinstance(it, CanvasRefItem)]
+        if len(selected) < 2:
+            return
+
+        rects = [(it, it.pos(), it.boundingRect()) for it in selected]
+
+        if mode == 'left':
+            min_x = min(pos.x() for _, pos, _ in rects)
+            for it, pos, _ in rects:
+                it.setPos(min_x, pos.y())
+        elif mode == 'right':
+            max_r = max(pos.x() + br.width() for _, pos, br in rects)
+            for it, pos, br in rects:
+                it.setPos(max_r - br.width(), pos.y())
+        elif mode == 'top':
+            min_y = min(pos.y() for _, pos, _ in rects)
+            for it, pos, _ in rects:
+                it.setPos(pos.x(), min_y)
+        elif mode == 'bottom':
+            max_b = max(pos.y() + br.height() for _, pos, br in rects)
+            for it, pos, br in rects:
+                it.setPos(pos.x(), max_b - br.height())
+        elif mode == 'center_h':
+            # Horizontal line
+            spacing = 30
+            sorted_by_x = sorted(rects, key=lambda r: r[1].x())
+            start_x = sorted_by_x[0][1].x()
+            curr_y = sorted_by_x[0][1].y()
+            for it, _, br in sorted_by_x:
+                it.setPos(start_x, curr_y)
+                start_x += br.width() + spacing
+        elif mode == 'center_v':
+            # Vertical column
+            spacing = 30
+            sorted_by_y = sorted(rects, key=lambda r: r[1].y())
+            curr_x = sorted_by_y[0][1].x()
+            start_y = sorted_by_y[0][1].y()
+            for it, _, br in sorted_by_y:
+                it.setPos(curr_x, start_y)
+                start_y += br.height() + spacing
+
+    def normalize_selected(self, dimension: str = 'height'):
+        """Make all selected items the exact same height or width."""
+        selected = [it for it in self.scene.selectedItems() if isinstance(it, CanvasRefItem)]
+        if len(selected) < 2:
+            return
+
+        target_val = selected[0].boundingRect().height() if dimension == 'height' else selected[0].boundingRect().width()
+
+        for it in selected[1:]:
+            cur_val = it.boundingRect().height() if dimension == 'height' else it.boundingRect().width()
+            if cur_val > 0:
+                s = target_val / cur_val
+                it.setScale(s)
+
+    # 4. Eyedropper / Color Picker
+    def sample_color_at(self, scene_pos: QPointF) -> Optional[str]:
+        """Sample pixel color from reference item under cursor."""
+        item = self.scene.itemAt(scene_pos, self.transform())
+        if isinstance(item, CanvasRefItem) and item.pixmap:
+            local_pos = item.mapFromScene(scene_pos)
+            lx = int(local_pos.x())
+            ly = int(local_pos.y())
+            if 0 <= lx < item.pixmap.width() and 0 <= ly < item.pixmap.height():
+                img = item.pixmap.toImage()
+                color = img.pixelColor(lx, ly)
+                hex_str = color.name().upper()
+                QApplication.clipboard().setText(hex_str)
+                self.color_sampled.emit(hex_str)
+                return hex_str
+        return None
+
+    # 5. Export Entire Canvas Image
+    def export_canvas_image(self, file_path: str) -> bool:
+        """Render whole canvas bounding box to crisp image."""
+        rect = self.scene.itemsBoundingRect().adjusted(-20, -20, 20, 20)
+        if rect.isEmpty():
+            return False
+
+        img = QImage(int(rect.width()), int(rect.height()), QImage.Format.Format_ARGB32_Premultiplied)
+        theme = get_current_theme()
+        img.fill(QColor(theme.bg_dark))
+
+        painter = QPainter(img)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        self.scene.render(painter, QRectF(img.rect()), rect)
+        painter.end()
+
+        return img.save(file_path)
+
     def fit_all_items(self):
         items_rect = self.scene.itemsBoundingRect()
         if not items_rect.isNull() and items_rect.width() > 0:
             self.fitInView(items_rect.adjusted(-60, -60, 60, 60), Qt.AspectRatioMode.KeepAspectRatio)
 
+    # Touch & Stylus
     def event(self, event: QEvent) -> bool:
-        """Handle 2-finger pinch-zoom and pan on infinite canvas with palm rejection."""
         if event.type() in (QEvent.Type.TouchBegin, QEvent.Type.TouchUpdate, QEvent.Type.TouchEnd):
             touch_event: QTouchEvent = event
             points = touch_event.points()
@@ -148,7 +289,6 @@ class CanvasView(QGraphicsView):
         return super().event(event)
 
     def tabletEvent(self, event: QTabletEvent):
-        """Stylus barrel button pan on canvas."""
         self.user_activity_detected.emit()
         if event.buttons() & Qt.MouseButton.RightButton:
             if event.type() == QEvent.Type.TabletMove:
@@ -168,6 +308,15 @@ class CanvasView(QGraphicsView):
 
     def mousePressEvent(self, event: QMouseEvent):
         self.user_activity_detected.emit()
+        # Alt+Click is eyedropper color sampler
+        if event.modifiers() & Qt.KeyboardModifier.AltModifier and event.button() == Qt.MouseButton.LeftButton:
+            scene_pos = self.mapToScene(event.pos())
+            hex_col = self.sample_color_at(scene_pos)
+            if hex_col:
+                event.accept()
+                return
+
+        # Middle click or Space+Left click pan
         if event.button() == Qt.MouseButton.MiddleButton or (event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.SpaceModifier):
             self.is_panning = True
             self.pan_start_pos = event.position()
@@ -205,25 +354,49 @@ class CanvasView(QGraphicsView):
         super().mouseDoubleClickEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent):
+        key = event.key()
+        ctrl = event.modifiers() & Qt.KeyboardModifier.ControlModifier
+
+        # Ctrl+V paste
+        if ctrl and key == Qt.Key.Key_V:
+            if self.paste_from_clipboard():
+                event.accept()
+                return
+        # Ctrl+C copy
+        elif ctrl and key == Qt.Key.Key_C:
+            self.copy_selected_to_clipboard()
+            event.accept()
+            return
+        # Ctrl+N sticky note
+        elif ctrl and key == Qt.Key.Key_N:
+            self.add_text_note()
+            event.accept()
+            return
+
         selected = [it for it in self.scene.selectedItems() if isinstance(it, CanvasRefItem)]
         if selected:
-            if event.key() == Qt.Key.Key_H:
+            if key == Qt.Key.Key_H:
                 for it in selected:
                     it.ref_item.toggle_flip()
                     it.update_transformations()
                 event.accept()
                 return
-            elif event.key() == Qt.Key.Key_G:
+            elif key == Qt.Key.Key_G:
                 for it in selected:
                     it.ref_item.toggle_grayscale()
                     it.update_transformations()
                 event.accept()
                 return
-            elif event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            elif key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
                 for it in selected:
                     self.scene.removeItem(it)
                 event.accept()
                 return
+            elif key == Qt.Key.Key_P:
+                self.auto_arrange_items(selected)
+                event.accept()
+                return
+
         super().keyPressEvent(event)
 
     def dragEnterEvent(self, event: QDragEnterEvent):

@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt, QRectF, QPointF, Signal, QEvent
 
 from refpad.models.item import RefItem
 from refpad.ui.timer_hud import TimerHUD
+from refpad.ui.themes import get_current_theme
 
 class ActionView(QWidget):
     open_folder_requested = Signal()
@@ -65,8 +66,8 @@ class ActionView(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-        # Deep graphite background
-        painter.fillRect(self.rect(), QColor(13, 14, 18))
+        theme = get_current_theme()
+        painter.fillRect(self.rect(), QColor(theme.bg_dark))
 
         if not self.cached_pixmap or self.cached_pixmap.isNull():
             self._draw_empty_state(painter)
