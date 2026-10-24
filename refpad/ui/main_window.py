@@ -529,9 +529,23 @@ class MainWindow(QWidget):
         self.canvas_view.add_ref_items(items, auto_tile=True)
 
     # --- BeeRef Board File I/O ---
+    def open_folder_or_files_dialog(self):
+        """Unified open dialog allowing opening files (images & PDFs) or boards."""
+        self.open_files_dialog()
+
     def save_board_dialog(self):
+        if self.current_board_path:
+            items = [it for it in self.canvas_view.scene.items() if isinstance(it, CanvasRefItem)]
+            notes = [it.toPlainText() for it in self.canvas_view.scene.items() if isinstance(it, CanvasTextItem)]
+            ok = BoardManager.save_board(self.current_board_path, items, notes)
+            if ok:
+                QMessageBox.information(self, "Saved", f"Board saved to {os.path.basename(self.current_board_path)}")
+                return
+        self.save_board_as_dialog()
+
+    def save_board_as_dialog(self):
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save Reference Board",
+            self, "Save Reference Board As",
             self.current_board_path or "moodboard.refpad",
             "RefPad Board (*.refpad);;BeeRef Board (*.bee)"
         )
@@ -542,6 +556,40 @@ class MainWindow(QWidget):
             if ok:
                 self.current_board_path = file_path
                 QMessageBox.information(self, "Saved", f"Board saved to {os.path.basename(file_path)}")
+
+    def start_practice_with_item(self, item: RefItem):
+        """Immediately starts Line of Action practice session using the selected reference."""
+        self._on_start_session_with_item(item)
+
+    def send_all_canvas_to_practice(self):
+        """Sends all reference items currently on the Reference Board into the practice session pool."""
+        image_items = self.canvas_view.get_all_image_items()
+        if not image_items:
+            QMessageBox.information(self, "No References", "No references on the board to practice with.")
+            return
+        refs = [it.ref_item for it in image_items]
+        self.source_manager.items = refs
+        self.session_engine.set_items(refs)
+        QMessageBox.information(self, "Practice Ready", f"Sent {len(refs)} references to Practice Session. Press Tab to practice!")
+
+    def toggle_view_mode(self):
+        """Switch between Reference Board and Practice Mode."""
+        self.title_bar.toggle_mode()
+
+    def toggle_always_on_top(self):
+        """Toggle Pin Window Always On Top."""
+        self.floating_dock.btn_pin.click()
+
+    def toggle_fullscreen(self):
+        """Toggle fullscreen mode."""
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+
+    def apply_theme(self, theme_key: str):
+        """Switches application theme dynamically."""
+        self._on_theme_changed(theme_key)
 
     def open_board_dialog(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -564,15 +612,19 @@ class MainWindow(QWidget):
                 page_num=item_data.get("page_num", 0),
                 name=item_data.get("name", ""),
                 is_flipped_h=item_data.get("is_flipped_h", False),
-                is_grayscale=item_data.get("is_grayscale", False)
+                is_flipped_v=item_data.get("is_flipped_v", False),
+                rotation=item_data.get("rotation", 0.0),
+                is_grayscale=item_data.get("is_grayscale", False),
+                is_inverted=item_data.get("is_inverted", False),
+                opacity=item_data.get("opacity", 1.0)
             )
-            if "embedded_data" in item_data:
+            if "embedded_data" in item_data and item_data["embedded_data"]:
                 ref.in_memory_pixmap = base64_to_pixmap(item_data["embedded_data"])
 
             c_item = CanvasRefItem(ref)
             c_item.setPos(item_data.get("x", 0), item_data.get("y", 0))
             c_item.setScale(item_data.get("scale", 1.0))
-            c_item.setRotation(item_data.get("rotation", 0.0))
+            c_item.set_item_opacity(item_data.get("opacity", 1.0))
             self.canvas_view.scene.addItem(c_item)
             loaded_refs.append(ref)
 
@@ -596,7 +648,25 @@ class MainWindow(QWidget):
 
     # Context menu
     def contextMenuEvent(self, event):
-        self.floating_dock._show_main_menu()
+        from refpad.ui.beeref_menu import BeeRefContextMenu, style_beeref_menu
+        if self.title_bar.active_mode == 'canvas':
+            menu = BeeRefContextMenu.build_menu(self, self.canvas_view, self)
+            menu.exec(event.globalPos())
+        else:
+            menu = QMenu(self)
+            style_beeref_menu(menu)
+            menu.addAction("Switch to Reference Board\tTab", self.toggle_view_mode)
+            menu.addAction("Play / Pause Practice\tSpace", self.session_engine.toggle_pause)
+            menu.addAction("Next Reference\t→, D", self.session_engine.next_pose)
+            menu.addAction("Previous Reference\t←, A", self.session_engine.prev_pose)
+            menu.addAction("Restart Current Reference\tR", self.session_engine.restart_current_pose)
+            menu.addSeparator()
+            menu.addAction("Flip Pose\tH", self._toggle_flip)
+            menu.addAction("Grayscale Pose\tG", self._toggle_grayscale)
+            menu.addSeparator()
+            menu.addAction("Always On Top\tT", self.toggle_always_on_top)
+            menu.addAction("Load Images / PDF Folder...", self.open_files_dialog)
+            menu.exec(event.globalPos())
         event.accept()
 
     # Keyboard Express Keys

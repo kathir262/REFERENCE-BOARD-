@@ -1,12 +1,13 @@
 """
 Interactive BeeRef Canvas Item: movable, scalable, rotatable, flippable image tile and text notes.
+Full BeeRef feature set: 90° rotations, opacity, layering (Z-order), reset transforms.
 """
 from typing import Optional
 from PySide6.QtWidgets import (
     QGraphicsItem, QGraphicsTextItem, QStyleOptionGraphicsItem, QWidget
 )
 from PySide6.QtGui import (
-    QPainter, QPixmap, QColor, QPen, QBrush, QFont, QTransform
+    QPainter, QPixmap, QColor, QPen, QBrush, QFont
 )
 from PySide6.QtCore import Qt, QRectF, QPointF
 
@@ -18,7 +19,7 @@ class CanvasRefItem(QGraphicsItem):
         super().__init__(parent)
         self.ref_item = ref_item
         self.pixmap: Optional[QPixmap] = ref_item.get_transformed_pixmap()
-        self.item_opacity: float = 1.0
+        self.item_opacity: float = ref_item.opacity
 
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsMovable |
@@ -37,6 +38,49 @@ class CanvasRefItem(QGraphicsItem):
         self.prepareGeometryChange()
         self.pixmap = self.ref_item.get_transformed_pixmap()
         self.update()
+
+    def set_item_opacity(self, opacity: float):
+        self.item_opacity = max(0.05, min(1.0, opacity))
+        self.ref_item.opacity = self.item_opacity
+        self.update()
+
+    def reset_scale(self):
+        self.setScale(1.0)
+
+    def reset_rotation(self):
+        self.ref_item.rotation = 0.0
+        self.update_transformations()
+
+    def reset_flip(self):
+        self.ref_item.is_flipped_h = False
+        self.ref_item.is_flipped_v = False
+        self.update_transformations()
+
+    def reset_crop(self):
+        self.ref_item.reset_crop()
+        self.update_transformations()
+
+    def reset_all_transforms(self):
+        self.setScale(1.0)
+        self.ref_item.reset_transforms()
+        self.ref_item.is_grayscale = False
+        self.ref_item.is_inverted = False
+        self.set_item_opacity(1.0)
+        self.update_transformations()
+
+    def raise_to_top(self):
+        scene = self.scene()
+        if scene:
+            all_z = [it.zValue() for it in scene.items() if it != self]
+            max_z = max(all_z, default=0.0)
+            self.setZValue(max_z + 1.0)
+
+    def lower_to_bottom(self):
+        scene = self.scene()
+        if scene:
+            all_z = [it.zValue() for it in scene.items() if it != self]
+            min_z = min(all_z, default=0.0)
+            self.setZValue(min_z - 1.0)
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: Optional[QWidget] = None):
         if not self.pixmap or self.pixmap.isNull():
@@ -105,8 +149,21 @@ class CanvasTextItem(QGraphicsTextItem):
         self.setFont(QFont("Segoe UI", 14, QFont.Weight.DemiBold))
         self.setDefaultTextColor(QColor(240, 240, 245))
 
+    def raise_to_top(self):
+        scene = self.scene()
+        if scene:
+            all_z = [it.zValue() for it in scene.items() if it != self]
+            max_z = max(all_z, default=0.0)
+            self.setZValue(max_z + 1.0)
+
+    def lower_to_bottom(self):
+        scene = self.scene()
+        if scene:
+            all_z = [it.zValue() for it in scene.items() if it != self]
+            min_z = min(all_z, default=0.0)
+            self.setZValue(min_z - 1.0)
+
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: Optional[QWidget] = None):
-        # Draw translucent background pill behind text note
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.boundingRect()
         painter.setBrush(QBrush(QColor(24, 26, 32, 210)))

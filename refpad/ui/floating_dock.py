@@ -195,49 +195,13 @@ class FloatingDock(QWidget):
         self.pin_toggled.emit(self.is_pinned)
 
     def _show_main_menu(self):
-        """Full BeeRef Menu: File, Edit, Arrange, Themes, Window."""
-        menu = QMenu(self)
-        self._style_menu(menu)
-
-        menu_file = menu.addMenu("📁 File")
-        self._style_menu(menu_file)
-        menu_file.addAction("Open Reference Board (.refpad / .bee)... (Ctrl+O)", self.open_board_requested.emit)
-        menu_file.addAction("Save Reference Board (Ctrl+S)", self.save_board_requested.emit)
-        menu_file.addSeparator()
-        menu_file.addAction("Open PDF Reference Book...", self.open_pdf_requested.emit)
-        menu_file.addAction("Open Image / PDF Folder...", self.open_folder_requested.emit)
-        menu_file.addSeparator()
-        menu_file.addAction("Export Reference Board as Image... (Ctrl+E)", self.export_image_requested.emit)
-
-        menu_edit = menu.addMenu("✏️ Edit")
-        self._style_menu(menu_edit)
-        menu_edit.addAction("Paste Image from Clipboard (Ctrl+V)", self.paste_requested.emit)
-        menu_edit.addAction("Add Sticky Text Note (Ctrl+N)", self.add_note_requested.emit)
-
-        menu_arrange = menu.addMenu("📐 Arrange & Align")
-        self._style_menu(menu_arrange)
-        menu_arrange.addAction("Pack & Auto-Tile (P)", self.auto_arrange_clicked.emit)
-        menu_arrange.addSeparator()
-        menu_arrange.addAction("Align Left", lambda: self.align_requested.emit('left'))
-        menu_arrange.addAction("Align Right", lambda: self.align_requested.emit('right'))
-        menu_arrange.addAction("Align Top", lambda: self.align_requested.emit('top'))
-        menu_arrange.addAction("Align Bottom", lambda: self.align_requested.emit('bottom'))
-        menu_arrange.addAction("Align Center Horizontal (Row)", lambda: self.align_requested.emit('center_h'))
-        menu_arrange.addAction("Align Center Vertical (Column)", lambda: self.align_requested.emit('center_v'))
-        menu_arrange.addSeparator()
-        menu_arrange.addAction("Normalize Height (Same Height)", lambda: self.normalize_requested.emit('height'))
-        menu_arrange.addAction("Normalize Width (Same Width)", lambda: self.normalize_requested.emit('width'))
-
-        menu_themes = menu.addMenu("🎨 Themes")
-        self._style_menu(menu_themes)
-        for key, pal in THEMES.items():
-            action = menu_themes.addAction(pal.name)
-            action.triggered.connect(lambda chk=False, k=key: self._select_theme(k))
-
-        menu.addSeparator()
-        menu.addAction("Fit All in View (F)", self.fit_all_clicked.emit)
-
-        menu.exec(self.btn_menu.mapToGlobal(self.btn_menu.rect().bottomLeft()))
+        """Full BeeRef 1-to-1 Menu with all submenus and actions."""
+        from refpad.ui.beeref_menu import BeeRefContextMenu
+        main_win = self.window()
+        canvas = getattr(main_win, 'canvas_view', None)
+        if canvas:
+            menu = BeeRefContextMenu.build_menu(self, canvas, main_win)
+            menu.exec(self.btn_menu.mapToGlobal(self.btn_menu.rect().bottomLeft()))
 
     def _select_theme(self, key: str):
         set_current_theme(key)
