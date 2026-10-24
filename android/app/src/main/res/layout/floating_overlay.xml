@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/overlay_root"
+    android:layout_width="320dp"
+    android:layout_height="400dp"
+    android:background="@drawable/overlay_background">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!-- Top Drag Header -->
+        <LinearLayout
+            android:id="@+id/header_bar"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:background="#281A1C23">
+
+            <TextView
+                android:id="@+id/tv_header_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="RefPad"
+                android:textColor="#F0F3F6"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btn_mode_toggle"
+                android:layout_width="wrap_content"
+                android:layout_height="28dp"
+                android:text="Tab"
+                android:textSize="10sp"
+                android:textColor="#FFFFFF" />
+
+            <Button
+                android:id="@+id/btn_close"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:text="✕"
+                android:textSize="11sp"
+                android:textColor="#FF7B72" />
+        </LinearLayout>
+
+        <!-- Pose Display / Canvas Area -->
+        <FrameLayout
+            android:id="@+id/canvas_container"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <ImageView
+                android:id="@+id/iv_pose"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitCenter" />
+
+            <!-- Circular Timer HUD Card -->
+            <LinearLayout
+                android:id="@+id/hud_card"
+                android:layout_width="100dp"
+                android:layout_height="110dp"
+                android:layout_gravity="top|start"
+                android:layout_margin="12dp"
+                android:background="#D0181A20"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <TextView
+                    android:id="@+id/tv_countdown"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="1:48"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_badge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="2 MIN POSE"
+                    android:textColor="#7E57F6"
+                    android:textSize="9sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_pose_counter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Pose 3/20"
+                    android:textColor="#8B949E"
+                    android:textSize="8sp" />
+            </LinearLayout>
+        </FrameLayout>
+
+        <!-- Bottom Controls -->
+        <LinearLayout
+            android:id="@+id/bottom_controls"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:background="#281A1C23"
+            android:padding="4dp">
+
+            <Button
+                android:id="@+id/btn_prev"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:text="⏮"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btn_play_pause"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:text="⏸ Pause"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/btn_next"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:text="⏭"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btn_flip"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:text="⇄"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btn_grayscale"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:text="◑"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Corner Resize Handle (Bottom Right) -->
+    <View
+        android:id="@+id/resize_handle"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_gravity="bottom|end"
+        android:background="#80FFFFFF" />
+
+</FrameLayout>

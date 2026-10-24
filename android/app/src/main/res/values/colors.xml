@@ -1,0 +1,9 @@
+<resources>
+    <color name="bg_dark">#121418</color>
+    <color name="card_bg">#1A1C23</color>
+    <color name="accent_purple">#7E57F6</color>
+    <color name="accent_purple_variant">#906BF9</color>
+    <color name="text_primary">#F0F3F6</color>
+    <color name="text_secondary">#8B949E</color>
+    <color name="overlay_border">#33FFFFFF</color>
+</resources>
