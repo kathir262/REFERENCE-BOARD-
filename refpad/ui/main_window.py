@@ -1,19 +1,22 @@
 """
 Main Floating Window for RefPad.
-All-edge smooth resize engine (left, right, bottom, top, corners),
-Full BeeRef Board operations (Save, Open, Paste, Align, Normalize, Export, Sticky Notes),
-Flexible Theme Switcher (Black & White, Rose Blossom, Midnight, Paper),
-and Line of Action timed practice engine.
+
+Architecture:
+  - Visible DRAG HANDLE at top (30px strip with grip dots) — click & drag to move window
+  - ALL 4 edges + 4 corners resize via per-child event-filter intercept
+  - Zero hardcoded purple — everything uses get_current_theme()
+  - Full BeeRef operations: Save, Open, Paste, Align, Normalize, Export, Sticky Notes
+  - Theme switcher: Black & White, Rose, Midnight, Paper
 """
 import os
 from typing import List, Optional
 from PySide6.QtWidgets import (
-    QWidget, QStackedWidget, QFileDialog, QMessageBox, QMenu, QApplication, QPushButton
+    QWidget, QStackedWidget, QFileDialog, QMessageBox, QApplication, QPushButton, QLabel
 )
 from PySide6.QtGui import (
-    QPainter, QColor, QPen, QBrush, QKeyEvent, QMouseEvent, QCursor
+    QPainter, QColor, QPen, QBrush, QKeyEvent, QMouseEvent, QPainterPath
 )
-from PySide6.QtCore import Qt, QPoint, QRect, Signal, QRectF, QEvent
+from PySide6.QtCore import Qt, QPoint, QRect, QRectF, QEvent, Signal
 
 from refpad.engine.source_manager import SourceManager
 from refpad.engine.session_engine import SessionEngine
@@ -27,13 +30,95 @@ from refpad.ui.canvas_view import CanvasView
 from refpad.ui.canvas_item import CanvasRefItem, CanvasTextItem
 from refpad.ui.themes import get_current_theme, set_current_theme, THEMES
 
-RESIZE_MARGIN = 12
+RESIZE_MARGIN = 10   # px from edge to trigger resize
+DRAG_HANDLE_H = 32   # height of the top drag handle strip
+
+
+class TitleBar(QWidget):
+    """
+    Visible drag handle at the top of the window.
+    Thin strip with grip dots in the center, mode switch centered, close/min on right.
+    """
+    close_clicked = Signal()
+    min_clicked = Signal()
+
+    def __init__(self, pill_switch: SegmentedPillSwitch, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(DRAG_HANDLE_H)
+        self.setMouseTracking(True)
+        self.pill_switch = pill_switch
+
+        # Close button
+        self.btn_close = QPushButton("✕", self)
+        self.btn_close.setFixedSize(22, 22)
+        self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_close.clicked.connect(self.close_clicked.emit)
+
+        # Minimize button
+        self.btn_min = QPushButton("—", self)
+        self.btn_min.setFixedSize(22, 22)
+        self.btn_min.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_min.clicked.connect(self.min_clicked.emit)
+
+    def apply_theme(self):
+        theme = get_current_theme()
+        base_btn = f"""
+            QPushButton {{
+                background: transparent;
+                border: 1px solid {theme.border};
+                border-radius: 5px;
+                color: {theme.text_muted};
+                font-size: 10px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background: {theme.accent};
+                color: {theme.bg_dark};
+                border-color: {theme.accent};
+            }}
+        """
+        self.btn_close.setStyleSheet(base_btn)
+        self.btn_min.setStyleSheet(base_btn)
+        self.update()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        w = self.width()
+        # Close far right, min next to it
+        self.btn_close.move(w - 28, 5)
+        self.btn_min.move(w - 54, 5)
+
+        # Pill switch centered in title bar
+        sw = self.pill_switch.sizeHint().width() + 8
+        self.pill_switch.setGeometry((w - sw) // 2, 1, sw, DRAG_HANDLE_H - 2)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        theme = get_current_theme()
+
+        # Solid bar background
+        painter.fillRect(self.rect(), QColor(theme.bg_card))
+
+        # Bottom border line
+        painter.setPen(QPen(QColor(theme.border), 1))
+        painter.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
+
+        # Grip dots (centered, left of switch)
+        dot_col = QColor(theme.text_muted)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(dot_col))
+        cx = 28
+        cy = self.height() // 2
+        for dx in (-5, 0, 5):
+            for dy in (-3, 3):
+                painter.drawEllipse(QRectF(cx + dx - 1.5, cy + dy - 1.5, 3, 3))
+
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
 
-        # Frameless, Always-on-top, Translucent window
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
@@ -41,7 +126,6 @@ class MainWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMouseTracking(True)
-
         self.resize(780, 600)
         self.setMinimumSize(380, 280)
 
@@ -50,75 +134,52 @@ class MainWindow(QWidget):
         self.session_engine = SessionEngine(self)
         self.sound_cue = SoundCue(self)
 
-        # Resizing and Dragging State
-        self.drag_position: Optional[QPoint] = None
+        # Resize state
         self.resizing_edge: Optional[str] = None
         self.resize_start_geometry: Optional[QRect] = None
         self.resize_start_mouse: Optional[QPoint] = None
+
+        # Drag state (from title bar only)
+        self.is_dragging_window: bool = False
+        self.drag_start_global: Optional[QPoint] = None
+        self.drag_start_win_pos: Optional[QPoint] = None
 
         self.current_board_path: Optional[str] = None
 
         self._init_ui()
         self._connect_signals()
-
-        # Install event filter to catch edge resize events even when hovering child views
-        self.stacked_views.installEventFilter(self)
-        self.action_view.installEventFilter(self)
-        self.canvas_view.viewport().installEventFilter(self)
+        self._install_all_event_filters()
 
     def _init_ui(self):
-        # 1. Central Stacked View
+        # Mode switch pill lives inside the title bar
+        self.pill_switch = SegmentedPillSwitch(self)
+
+        # Title bar (drag handle)
+        self.title_bar = TitleBar(self.pill_switch, self)
+        self.title_bar.close_clicked.connect(self.close)
+        self.title_bar.min_clicked.connect(self.showMinimized)
+
+        # Central stacked views
         self.stacked_views = QStackedWidget(self)
         self.action_view = ActionView(self)
         self.canvas_view = CanvasView(self)
+        self.stacked_views.addWidget(self.action_view)
+        self.stacked_views.addWidget(self.canvas_view)
 
-        self.stacked_views.addWidget(self.action_view)  # 0: Line of Action
-        self.stacked_views.addWidget(self.canvas_view)  # 1: BeeRef Board
-
-        # 2. Top Segmented Switch
-        self.pill_switch = SegmentedPillSwitch(self)
-
-        # 3. Top-Right Window Controls
-        self.btn_close = QPushButton("✕", self)
-        self.btn_close.setFixedSize(26, 26)
-        self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_close.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(20, 22, 28, 190);
-                border: 1px solid rgba(255, 255, 255, 25);
-                border-radius: 6px;
-                color: #ff7b72;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #da3633;
-                color: white;
-            }
-        """)
-        self.btn_close.clicked.connect(self.close)
-
-        self.btn_min = QPushButton("—", self)
-        self.btn_min.setFixedSize(26, 26)
-        self.btn_min.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_min.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(20, 22, 28, 190);
-                border: 1px solid rgba(255, 255, 255, 25);
-                border-radius: 6px;
-                color: #c9d1d9;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 35);
-                color: white;
-            }
-        """)
-        self.btn_min.clicked.connect(self.showMinimized)
-
-        # 4. Floating Glass Bottom Dock
+        # Floating bottom dock
         self.floating_dock = FloatingDock(self)
+
+        # Apply theme to title bar
+        self.title_bar.apply_theme()
+
+    def _install_all_event_filters(self):
+        """Install on every child so edge moves are captured everywhere."""
+        self.title_bar.installEventFilter(self)
+        self.stacked_views.installEventFilter(self)
+        self.action_view.installEventFilter(self)
+        self.canvas_view.installEventFilter(self)
+        self.canvas_view.viewport().installEventFilter(self)
+        self.floating_dock.installEventFilter(self)
 
     def _connect_signals(self):
         self.pill_switch.mode_changed.connect(self._on_mode_changed)
@@ -130,7 +191,6 @@ class MainWindow(QWidget):
         self.canvas_view.files_dropped.connect(self.handle_incoming_files)
         self.canvas_view.start_session_with_item.connect(self._on_start_session_with_item)
 
-        # Floating Dock actions
         self.floating_dock.play_pause_clicked.connect(self.session_engine.toggle_pause)
         self.floating_dock.next_clicked.connect(self.session_engine.next_pose)
         self.floating_dock.prev_clicked.connect(self.session_engine.prev_pose)
@@ -147,10 +207,8 @@ class MainWindow(QWidget):
         self.floating_dock.normalize_requested.connect(self.canvas_view.normalize_selected)
         self.floating_dock.theme_changed.connect(self._on_theme_changed)
         self.floating_dock.pin_toggled.connect(self._on_pin_toggled)
-
         self.floating_dock.flip_clicked.connect(self._toggle_flip)
         self.floating_dock.grayscale_clicked.connect(self._toggle_grayscale)
-
         self.floating_dock.fit_all_clicked.connect(self.canvas_view.fit_all_items)
         self.floating_dock.auto_arrange_clicked.connect(lambda: self.canvas_view.auto_arrange_items())
 
@@ -161,21 +219,165 @@ class MainWindow(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        w = self.width()
-        h = self.height()
-        m = 6  # 6px perimeter margin to allow smooth resizing from all sides
+        w, h = self.width(), self.height()
+        m = RESIZE_MARGIN  # leave perimeter for resize
 
-        self.stacked_views.setGeometry(m, m, w - m * 2, h - m * 2)
+        # Title bar full width at top
+        self.title_bar.setGeometry(m, m, w - m * 2, DRAG_HANDLE_H)
 
-        switch_w = self.pill_switch.sizeHint().width() + 10
-        self.pill_switch.setGeometry(int((w - switch_w) / 2), 14, switch_w, 34)
+        # Stacked views fill the rest (below title bar, above dock)
+        content_top = m + DRAG_HANDLE_H
+        content_h = h - content_top - 60 - m
+        self.stacked_views.setGeometry(m, content_top, w - m * 2, content_h)
 
-        self.btn_close.move(w - 38, 14)
-        self.btn_min.move(w - 70, 14)
+        # Dock centered at bottom
+        dock_w = max(200, min(self.floating_dock.sizeHint().width(), w - m * 2))
+        self.floating_dock.setGeometry((w - dock_w) // 2, h - 60, dock_w, 48)
 
-        dock_w = self.floating_dock.sizeHint().width()
-        self.floating_dock.setGeometry(int((w - dock_w) / 2), h - 64, dock_w, 48)
+    # ---------------------------------------------------------------
+    # Event filter — runs on MainWindow itself AND all child widgets
+    # to intercept edge/corner resize mouse events.
+    # ---------------------------------------------------------------
+    def eventFilter(self, watched, event: QEvent) -> bool:
+        t = event.type()
 
+        if t == QEvent.Type.MouseButtonPress:
+            ev: QMouseEvent = event
+            if ev.button() == Qt.MouseButton.LeftButton:
+                global_pos = ev.globalPosition().toPoint()
+                local_pos = self.mapFromGlobal(global_pos)
+                edge = self._get_edge(local_pos)
+
+                if edge:
+                    # Start resize
+                    self.resizing_edge = edge
+                    self.resize_start_geometry = self.geometry()
+                    self.resize_start_mouse = global_pos
+                    self.setCursor(self._cursor_for_edge(edge))
+                    return True
+
+                # Title bar drag
+                if watched is self.title_bar and not edge:
+                    self.is_dragging_window = True
+                    self.drag_start_global = global_pos
+                    self.drag_start_win_pos = self.pos()
+                    self.title_bar.setCursor(Qt.CursorShape.ClosedHandCursor)
+                    return True
+
+        elif t == QEvent.Type.MouseMove:
+            ev: QMouseEvent = event
+            global_pos = ev.globalPosition().toPoint()
+            local_pos = self.mapFromGlobal(global_pos)
+
+            if self.resizing_edge:
+                self._perform_resize(global_pos)
+                return True
+
+            if self.is_dragging_window and self.drag_start_global and self.drag_start_win_pos:
+                delta = global_pos - self.drag_start_global
+                self.move(self.drag_start_win_pos + delta)
+                return True
+
+            # Update cursor shape even without pressing (on the outer widget only)
+            if watched is self:
+                edge = self._get_edge(local_pos)
+                self.setCursor(self._cursor_for_edge(edge) if edge else Qt.CursorShape.ArrowCursor)
+
+        elif t == QEvent.Type.MouseButtonRelease:
+            if self.resizing_edge or self.is_dragging_window:
+                self.resizing_edge = None
+                self.resize_start_geometry = None
+                self.resize_start_mouse = None
+                self.is_dragging_window = False
+                self.drag_start_global = None
+                self.drag_start_win_pos = None
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+                self.title_bar.setCursor(Qt.CursorShape.OpenHandCursor)
+                return True
+
+        return super().eventFilter(watched, event)
+
+    def _get_edge(self, pos: QPoint) -> Optional[str]:
+        m = RESIZE_MARGIN
+        w, h = self.width(), self.height()
+        x, y = pos.x(), pos.y()
+        on_l = x <= m;  on_r = x >= w - m
+        on_t = y <= m;  on_b = y >= h - m
+
+        if on_t and on_l:  return "top_left"
+        if on_t and on_r:  return "top_right"
+        if on_b and on_l:  return "bottom_left"
+        if on_b and on_r:  return "bottom_right"
+        if on_l:           return "left"
+        if on_r:           return "right"
+        if on_t:           return "top"
+        if on_b:           return "bottom"
+        return None
+
+    def _cursor_for_edge(self, edge: Optional[str]):
+        if edge in ("top_left", "bottom_right"): return Qt.CursorShape.SizeFDiagCursor
+        if edge in ("top_right", "bottom_left"): return Qt.CursorShape.SizeBDiagCursor
+        if edge in ("left", "right"):            return Qt.CursorShape.SizeHorCursor
+        if edge in ("top", "bottom"):            return Qt.CursorShape.SizeVerCursor
+        return Qt.CursorShape.ArrowCursor
+
+    def _perform_resize(self, global_pos: QPoint):
+        if not (self.resizing_edge and self.resize_start_geometry and self.resize_start_mouse):
+            return
+        diff = global_pos - self.resize_start_mouse
+        geo = QRect(self.resize_start_geometry)
+        e = self.resizing_edge
+        if "right"  in e: geo.setRight(geo.right()  + diff.x())
+        if "bottom" in e: geo.setBottom(geo.bottom() + diff.y())
+        if "left"   in e: geo.setLeft(geo.left()    + diff.x())
+        if "top"    in e: geo.setTop(geo.top()      + diff.y())
+        if geo.width() >= self.minimumWidth() and geo.height() >= self.minimumHeight():
+            self.setGeometry(geo)
+
+    # ---------------------------------------------------------------
+    # Also handle mouse events directly on the MainWindow background
+    # ---------------------------------------------------------------
+    def mousePressEvent(self, event: QMouseEvent):
+        # This fires when clicking the BORDER / BACKGROUND of the main window
+        if event.button() == Qt.MouseButton.LeftButton:
+            global_pos = event.globalPosition().toPoint()
+            local_pos = event.pos()
+            edge = self._get_edge(local_pos)
+            if edge:
+                self.resizing_edge = edge
+                self.resize_start_geometry = self.geometry()
+                self.resize_start_mouse = global_pos
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        global_pos = event.globalPosition().toPoint()
+        if self.resizing_edge:
+            self._perform_resize(global_pos)
+            event.accept()
+            return
+        edge = self._get_edge(event.pos())
+        self.setCursor(self._cursor_for_edge(edge) if edge else Qt.CursorShape.ArrowCursor)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        if self.resizing_edge:
+            self.resizing_edge = None
+            self.resize_start_geometry = None
+            self.resize_start_mouse = None
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def contextMenuEvent(self, event):
+        self.floating_dock._show_main_menu()
+        event.accept()
+
+    # ---------------------------------------------------------------
+    # Mode & Theme
+    # ---------------------------------------------------------------
     def _on_mode_changed(self, mode: str):
         if mode == 'action':
             self.stacked_views.setCurrentWidget(self.action_view)
@@ -183,12 +385,15 @@ class MainWindow(QWidget):
         else:
             self.stacked_views.setCurrentWidget(self.canvas_view)
             self.floating_dock.set_mode('canvas')
-        self.resizeEvent(None)
 
     def _on_theme_changed(self, theme_key: str):
         set_current_theme(theme_key)
+        self.title_bar.apply_theme()
+        self.floating_dock._apply_styles()
+        self.pill_switch._update_styles()
         self.action_view.update()
         self.canvas_view.viewport().update()
+        self.action_view.timer_hud.update()
         self.update()
 
     def _on_pin_toggled(self, pinned: bool):
@@ -233,7 +438,9 @@ class MainWindow(QWidget):
         self.pill_switch.set_mode('action')
         self.session_engine.start_session()
 
-    # --- BeeRef Board File I/O ---
+    # ---------------------------------------------------------------
+    # Board I/O
+    # ---------------------------------------------------------------
     def save_board_dialog(self):
         file_path, _ = QFileDialog.getSaveFileName(
             self, "Save Reference Board",
@@ -246,71 +453,68 @@ class MainWindow(QWidget):
             ok = BoardManager.save_board(file_path, items, notes)
             if ok:
                 self.current_board_path = file_path
-                QMessageBox.information(self, "Board Saved", f"Successfully saved board to:\n{os.path.basename(file_path)}")
+                QMessageBox.information(self, "Saved", f"Board saved to {os.path.basename(file_path)}")
 
     def open_board_dialog(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Open Reference Board", "",
             "RefPad / BeeRef Board (*.refpad *.bee);;All Files (*.*)"
         )
-        if file_path:
-            data = BoardManager.load_board(file_path)
-            if not data:
-                QMessageBox.warning(self, "Open Error", "Failed to load board file.")
-                return
+        if not file_path:
+            return
+        data = BoardManager.load_board(file_path)
+        if not data:
+            QMessageBox.warning(self, "Error", "Failed to load board file.")
+            return
 
-            self.canvas_view.scene.clear()
-            loaded_refs = []
+        self.canvas_view.scene.clear()
+        loaded_refs = []
+        for item_data in data.get("items", []):
+            ref = RefItem(
+                source_type=item_data.get("source_type", "file"),
+                file_path=item_data.get("file_path", ""),
+                page_num=item_data.get("page_num", 0),
+                name=item_data.get("name", ""),
+                is_flipped_h=item_data.get("is_flipped_h", False),
+                is_grayscale=item_data.get("is_grayscale", False)
+            )
+            if "embedded_data" in item_data:
+                ref.in_memory_pixmap = base64_to_pixmap(item_data["embedded_data"])
 
-            for item_data in data.get("items", []):
-                ref = RefItem(
-                    source_type=item_data.get("source_type", "file"),
-                    file_path=item_data.get("file_path", ""),
-                    page_num=item_data.get("page_num", 0),
-                    name=item_data.get("name", ""),
-                    is_flipped_h=item_data.get("is_flipped_h", False),
-                    is_grayscale=item_data.get("is_grayscale", False)
-                )
+            c_item = CanvasRefItem(ref)
+            c_item.setPos(item_data.get("x", 0), item_data.get("y", 0))
+            c_item.setScale(item_data.get("scale", 1.0))
+            c_item.setRotation(item_data.get("rotation", 0.0))
+            self.canvas_view.scene.addItem(c_item)
+            loaded_refs.append(ref)
 
-                if "embedded_data" in item_data:
-                    ref.in_memory_pixmap = base64_to_pixmap(item_data["embedded_data"])
+        for note_text in data.get("notes", []):
+            self.canvas_view.add_text_note(note_text)
 
-                c_item = CanvasRefItem(ref)
-                c_item.setPos(item_data.get("x", 0), item_data.get("y", 0))
-                c_item.setScale(item_data.get("scale", 1.0))
-                c_item.setRotation(item_data.get("rotation", 0.0))
-                self.canvas_view.scene.addItem(c_item)
-                loaded_refs.append(ref)
-
-            for note_text in data.get("notes", []):
-                self.canvas_view.add_text_note(note_text)
-
-            self.source_manager.items = loaded_refs
-            self.session_engine.set_items(loaded_refs)
-            self.canvas_view.fit_all_items()
-            self.current_board_path = file_path
+        self.source_manager.items = loaded_refs
+        self.session_engine.set_items(loaded_refs)
+        self.canvas_view.fit_all_items()
+        self.current_board_path = file_path
 
     def export_board_dialog(self):
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export Board as Image", "moodboard_export.png",
+            self, "Export Board as Image", "moodboard.png",
             "PNG Image (*.png);;JPEG Image (*.jpg)"
         )
         if file_path:
             ok = self.canvas_view.export_canvas_image(file_path)
             if ok:
-                QMessageBox.information(self, "Export Successful", f"Board exported to:\n{os.path.basename(file_path)}")
+                QMessageBox.information(self, "Exported", f"Saved to {os.path.basename(file_path)}")
 
     def open_folder_dialog(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Image Reference Folder")
         if folder:
-            items = self.source_manager.load_folder(folder, recursive=True, shuffle=True)
-            self._apply_loaded_items(items)
+            self._apply_loaded_items(self.source_manager.load_folder(folder, recursive=True, shuffle=True))
 
     def open_pdf_dialog(self):
-        pdf_path, _ = QFileDialog.getOpenFileName(self, "Open Art or Anatomy PDF", "", "PDF Files (*.pdf)")
+        pdf_path, _ = QFileDialog.getOpenFileName(self, "Open PDF", "", "PDF Files (*.pdf)")
         if pdf_path:
-            items = self.source_manager.load_pdf(pdf_path)
-            self._apply_loaded_items(items)
+            self._apply_loaded_items(self.source_manager.load_pdf(pdf_path))
 
     def handle_incoming_files(self, paths: List[str]):
         if len(paths) == 1 and os.path.isdir(paths[0]):
@@ -326,66 +530,41 @@ class MainWindow(QWidget):
 
     def _apply_loaded_items(self, items: List[RefItem]):
         if not items:
-            QMessageBox.information(self, "No Images Found", "No valid image files or PDF pages were found.")
+            QMessageBox.information(self, "No Images Found", "No valid images or PDF pages found.")
             return
-
         self.session_engine.set_items(items)
         self.canvas_view.add_ref_items(items, auto_tile=True)
 
-    # --- Right-Click Context Menu Anywhere ---
-    def contextMenuEvent(self, event):
-        self.floating_dock._show_main_menu()
-        event.accept()
-
-    # --- Express Keyboard Shortcuts ---
+    # ---------------------------------------------------------------
+    # Keyboard Shortcuts
+    # ---------------------------------------------------------------
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
         ctrl = event.modifiers() & Qt.KeyboardModifier.ControlModifier
 
         if ctrl and key == Qt.Key.Key_S:
-            self.save_board_dialog()
-            event.accept()
-            return
-        elif ctrl and key == Qt.Key.Key_O:
-            self.open_board_dialog()
-            event.accept()
-            return
-        elif ctrl and key == Qt.Key.Key_E:
-            self.export_board_dialog()
-            event.accept()
-            return
-        elif key == Qt.Key.Key_Tab:
+            self.save_board_dialog(); return
+        if ctrl and key == Qt.Key.Key_O:
+            self.open_board_dialog(); return
+        if ctrl and key == Qt.Key.Key_E:
+            self.export_board_dialog(); return
+
+        if key == Qt.Key.Key_Tab:
             self.pill_switch.toggle_mode()
-            event.accept()
-            return
         elif key == Qt.Key.Key_Space:
             self.session_engine.toggle_pause()
-            event.accept()
-            return
         elif key in (Qt.Key.Key_Right, Qt.Key.Key_D):
             self.session_engine.next_pose()
-            event.accept()
-            return
         elif key in (Qt.Key.Key_Left, Qt.Key.Key_A):
             self.session_engine.prev_pose()
-            event.accept()
-            return
         elif key == Qt.Key.Key_R:
             self.session_engine.restart_current_pose()
-            event.accept()
-            return
         elif key == Qt.Key.Key_H:
             self._toggle_flip()
-            event.accept()
-            return
         elif key == Qt.Key.Key_G:
             self._toggle_grayscale()
-            event.accept()
-            return
         elif key == Qt.Key.Key_T:
             self.floating_dock.btn_pin.click()
-            event.accept()
-            return
         elif key == Qt.Key.Key_F:
             if self.pill_switch.current_mode == 'canvas':
                 self.canvas_view.fit_all_items()
@@ -393,127 +572,21 @@ class MainWindow(QWidget):
                 self.action_view.zoom_factor = 1.0
                 self.action_view.pan_offset = QPoint(0, 0)
                 self.action_view.update()
-            event.accept()
-            return
         elif key == Qt.Key.Key_BracketLeft:
-            op = max(0.2, self.windowOpacity() - 0.1)
-            self.setWindowOpacity(op)
-            event.accept()
-            return
+            self.setWindowOpacity(max(0.2, self.windowOpacity() - 0.1))
         elif key == Qt.Key.Key_BracketRight:
-            op = min(1.0, self.windowOpacity() + 0.1)
-            self.setWindowOpacity(op)
-            event.accept()
-            return
-
-        super().keyPressEvent(event)
-
-    # --- Seamless All-Edge and Corner Window Resizing Engine ---
-    def eventFilter(self, watched, event: QEvent) -> bool:
-        """Intercepts edge mouse events so all 4 sides and 4 corners resize smoothly."""
-        if event.type() == QEvent.Type.MouseMove:
-            m_event: QMouseEvent = event
-            global_pos = m_event.globalPosition().toPoint()
-            local_pos = self.mapFromGlobal(global_pos)
-            edge = self._get_edge(local_pos)
-
-            if not self.resizing_edge:
-                self._update_cursor_for_edge(edge)
-
-            if self.resizing_edge:
-                self._perform_resize(global_pos)
-                return True
-
-        elif event.type() == QEvent.Type.MouseButtonPress:
-            m_event: QMouseEvent = event
-            if m_event.button() == Qt.MouseButton.LeftButton:
-                global_pos = m_event.globalPosition().toPoint()
-                local_pos = self.mapFromGlobal(global_pos)
-                edge = self._get_edge(local_pos)
-                if edge:
-                    self.resizing_edge = edge
-                    self.resize_start_geometry = self.geometry()
-                    self.resize_start_mouse = global_pos
-                    return True
-                elif local_pos.y() <= 40 or m_event.modifiers() & Qt.KeyboardModifier.AltModifier:
-                    self.drag_position = global_pos - self.frameGeometry().topLeft()
-                    return True
-
-        elif event.type() == QEvent.Type.MouseButtonRelease:
-            if self.resizing_edge or self.drag_position:
-                self.resizing_edge = None
-                self.drag_position = None
-                self.setCursor(Qt.CursorShape.ArrowCursor)
-                return True
-
-        return super().eventFilter(watched, event)
-
-    def _perform_resize(self, global_pos: QPoint):
-        if not (self.resizing_edge and self.resize_start_geometry and self.resize_start_mouse):
-            return
-
-        diff = global_pos - self.resize_start_mouse
-        geo = QRect(self.resize_start_geometry)
-
-        if "right" in self.resizing_edge:
-            geo.setRight(geo.right() + diff.x())
-        if "bottom" in self.resizing_edge:
-            geo.setBottom(geo.bottom() + diff.y())
-        if "left" in self.resizing_edge:
-            geo.setLeft(geo.left() + diff.x())
-        if "top" in self.resizing_edge:
-            geo.setTop(geo.top() + diff.y())
-
-        if geo.width() >= self.minimumWidth() and geo.height() >= self.minimumHeight():
-            self.setGeometry(geo)
-
-    def _update_cursor_for_edge(self, edge: Optional[str]):
-        if edge in ("top_left", "bottom_right"):
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif edge in ("top_right", "bottom_left"):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        elif edge in ("left", "right"):
-            self.setCursor(Qt.CursorShape.SizeHorCursor)
-        elif edge in ("top", "bottom"):
-            self.setCursor(Qt.CursorShape.SizeVerCursor)
+            self.setWindowOpacity(min(1.0, self.windowOpacity() + 0.1))
         else:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+            super().keyPressEvent(event)
 
-    def _get_edge(self, pos: QPoint) -> Optional[str]:
-        m = RESIZE_MARGIN
-        w = self.width()
-        h = self.height()
-        x = pos.x()
-        y = pos.y()
-
-        on_left = x <= m
-        on_right = x >= w - m
-        on_top = y <= m
-        on_bottom = y >= h - m
-
-        if on_top and on_left:
-            return "top_left"
-        if on_top and on_right:
-            return "top_right"
-        if on_bottom and on_left:
-            return "bottom_left"
-        if on_bottom and on_right:
-            return "bottom_right"
-        if on_left:
-            return "left"
-        if on_right:
-            return "right"
-        if on_top:
-            return "top"
-        if on_bottom:
-            return "bottom"
-        return None
-
+    # ---------------------------------------------------------------
+    # Paint: outer rounded border frame
+    # ---------------------------------------------------------------
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = self.rect().adjusted(1, 1, -1, -1)
         theme = get_current_theme()
+        rect = self.rect().adjusted(1, 1, -1, -1)
         painter.setBrush(QBrush(QColor(theme.bg_dark)))
-        painter.setPen(QPen(QColor(theme.border), 1.2))
-        painter.drawRoundedRect(rect, 14, 14)
+        painter.setPen(QPen(QColor(theme.border), 1.5))
+        painter.drawRoundedRect(QRectF(rect), 12, 12)

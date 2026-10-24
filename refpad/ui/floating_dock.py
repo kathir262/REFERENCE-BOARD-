@@ -328,7 +328,7 @@ class FloatingDock(QWidget):
         theme = get_current_theme()
         btn_style = f"""
             QPushButton {{
-                background-color: rgba(255, 255, 255, 10);
+                background-color: {theme.bg_card};
                 border: 1px solid {theme.border};
                 border-radius: 8px;
                 color: {theme.text_primary};
@@ -338,8 +338,8 @@ class FloatingDock(QWidget):
                 padding: 0 10px;
             }}
             QPushButton:hover {{
-                background-color: rgba(255, 255, 255, 24);
-                color: {theme.accent};
+                background-color: {theme.accent};
+                color: {theme.bg_dark};
                 border-color: {theme.accent};
             }}
         """

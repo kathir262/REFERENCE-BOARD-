@@ -1,10 +1,14 @@
 """
-Boutique modern UI components: Frosted glass buttons, Segmented Switch, Floating Pill.
+Boutique UI widgets: GlassIconButton, SegmentedPillSwitch.
+ALL colors come from the active theme — zero hardcoded purple.
 """
-from typing import Callable, Optional
-from PySide6.QtWidgets import QWidget, QPushButton, QHBoxLayout, QLabel
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QMouseEvent, QEnterEvent
-from PySide6.QtCore import Qt, QRectF, Signal, Property, QPropertyAnimation, QEasingCurve
+from typing import Callable
+from PySide6.QtWidgets import QWidget, QPushButton, QHBoxLayout
+from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QEnterEvent
+from PySide6.QtCore import Qt, QRectF, Signal
+
+from refpad.ui.themes import get_current_theme
+
 
 class GlassIconButton(QPushButton):
     def __init__(self, draw_fn: Callable, tooltip: str = "", parent=None):
@@ -13,6 +17,7 @@ class GlassIconButton(QPushButton):
         self.setToolTip(tooltip)
         self.setFixedSize(36, 36)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFlat(True)
         self.is_hovered = False
         self.is_active = False
 
@@ -33,46 +38,51 @@ class GlassIconButton(QPushButton):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
+        theme = get_current_theme()
         rect = QRectF(2, 2, self.width() - 4, self.height() - 4)
 
-        # Background fill
         if self.is_active:
-            painter.setBrush(QBrush(QColor(126, 87, 246, 220)))  # Radiant purple
-            painter.setPen(QPen(QColor(160, 130, 255, 180), 1.2))
+            # Active: use accent fill (white in B&W, rose in rose theme, etc.)
+            painter.setBrush(QBrush(QColor(theme.accent)))
+            painter.setPen(QPen(QColor(theme.accent), 1))
         elif self.is_hovered:
-            painter.setBrush(QBrush(QColor(255, 255, 255, 28)))
-            painter.setPen(QPen(QColor(255, 255, 255, 45), 1))
+            painter.setBrush(QBrush(QColor(theme.accent + "30")))
+            painter.setPen(QPen(QColor(theme.accent), 1))
         else:
-            painter.setBrush(QBrush(QColor(255, 255, 255, 10)))
-            painter.setPen(QPen(QColor(255, 255, 255, 16), 1))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 8)))
+            painter.setPen(QPen(QColor(theme.border), 1))
 
         painter.drawRoundedRect(rect, 8, 8)
 
-        # Icon
-        icon_color = QColor(255, 255, 255) if (self.is_active or self.is_hovered) else QColor(200, 205, 215)
+        # Icon color: dark on active (so white icon on white bg is visible), else accent
+        if self.is_active:
+            icon_color = QColor(theme.bg_dark)
+        else:
+            icon_color = QColor(theme.text_primary if self.is_hovered else theme.text_muted)
+
         self.draw_fn(painter, rect, icon_color)
 
 
 class SegmentedPillSwitch(QWidget):
-    """Sleek floating segmented switch for [ ⏱ Practice ] | [ 🖼 Board ]."""
+    """Mode switcher: [ Practice ] [ Board ] — fully theme-aware."""
     mode_changed = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(34)
-        self.current_mode = "action"  # 'action' or 'canvas'
+        self.current_mode = "action"
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(3, 3, 3, 3)
         layout.setSpacing(2)
 
-        self.btn_action = QPushButton("⏱ Practice")
-        self.btn_canvas = QPushButton("🖼 Board")
+        self.btn_action = QPushButton("Practice")
+        self.btn_canvas = QPushButton("Board")
 
         for btn in (self.btn_action, self.btn_canvas):
             btn.setFixedHeight(28)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFlat(True)
             layout.addWidget(btn)
 
         self.btn_action.clicked.connect(lambda: self.set_mode("action"))
@@ -90,43 +100,59 @@ class SegmentedPillSwitch(QWidget):
         self.set_mode(new_mode)
 
     def _update_styles(self):
+        theme = get_current_theme()
         is_action = (self.current_mode == "action")
-        style_active = """
-            QPushButton {
-                background-color: #7e57f6;
-                color: #ffffff;
+
+        # Determine text color on active button — needs contrast with accent
+        # For white accent (B&W theme), text should be dark
+        accent_is_light = self._is_light_color(theme.accent)
+        active_text = theme.bg_dark if accent_is_light else theme.text_primary
+
+        style_active = f"""
+            QPushButton {{
+                background-color: {theme.accent};
+                color: {active_text};
                 font-family: 'Segoe UI', -apple-system;
                 font-size: 11px;
                 font-weight: 700;
                 border: none;
                 border-radius: 6px;
-                padding: 0 12px;
-            }
+                padding: 0 14px;
+            }}
         """
-        style_inactive = """
-            QPushButton {
+        style_inactive = f"""
+            QPushButton {{
                 background-color: transparent;
-                color: #8b949e;
+                color: {theme.text_muted};
                 font-family: 'Segoe UI', -apple-system;
                 font-size: 11px;
                 font-weight: 500;
                 border: none;
                 border-radius: 6px;
-                padding: 0 12px;
-            }
-            QPushButton:hover {
-                color: #ffffff;
-                background-color: rgba(255, 255, 255, 12);
-            }
+                padding: 0 14px;
+            }}
+            QPushButton:hover {{
+                color: {theme.text_primary};
+                background-color: {theme.border};
+            }}
         """
         self.btn_action.setStyleSheet(style_active if is_action else style_inactive)
         self.btn_canvas.setStyleSheet(style_active if not is_action else style_inactive)
 
+    def _is_light_color(self, hex_color: str) -> bool:
+        """Returns True if the hex color is visually light (needs dark text on top)."""
+        hex_color = hex_color.lstrip('#')
+        if len(hex_color) < 6:
+            return False
+        r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+        luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+        return luminance > 0.55
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        theme = get_current_theme()
         rect = QRectF(0, 0, self.width(), self.height())
-        # Dark translucent frosted pill container
-        painter.setBrush(QBrush(QColor(20, 22, 28, 225)))
-        painter.setPen(QPen(QColor(255, 255, 255, 24), 1))
+        painter.setBrush(QBrush(QColor(theme.bg_card)))
+        painter.setPen(QPen(QColor(theme.border), 1))
         painter.drawRoundedRect(rect, 8, 8)

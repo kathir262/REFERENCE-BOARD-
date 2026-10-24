@@ -1,20 +1,20 @@
 """
-Boutique Circular Countdown Timer HUD (Line of Action).
-Frosted glass card, gradient vector arc, micro-typography, draggable position.
+Circular Countdown Timer HUD — fully theme-aware, zero hardcoded purple.
+Draggable within the parent view.
 """
+import math
 from PySide6.QtWidgets import QWidget
-from PySide6.QtGui import (
-    QPainter, QColor, QPen, QFont, QBrush, QConicalGradient, QMouseEvent
-)
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QBrush, QMouseEvent
 from PySide6.QtCore import Qt, QRectF, QPointF
 from refpad.ui.themes import get_current_theme
+
 
 class TimerHUD(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
-        
+
         self.remaining_seconds: float = 120.0
         self.duration_seconds: int = 120
         self.fraction: float = 1.0
@@ -22,9 +22,7 @@ class TimerHUD(QWidget):
         self.total_poses: int = 0
         self.is_paused: bool = True
 
-        self.setFixedSize(130, 150)
-
-        # Allow dragging HUD inside parent view
+        self.setFixedSize(130, 152)
         self.is_dragging = False
         self.drag_start_pos = QPointF(0, 0)
 
@@ -43,6 +41,7 @@ class TimerHUD(QWidget):
         self.is_paused = paused
         self.update()
 
+    # --- Draggable HUD ---
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             self.is_dragging = True
@@ -55,7 +54,6 @@ class TimerHUD(QWidget):
         if self.is_dragging and self.parentWidget():
             delta = event.position() - self.drag_start_pos
             new_pos = self.pos() + delta.toPoint()
-            # Constrain within parent
             pw = self.parentWidget().width()
             ph = self.parentWidget().height()
             nx = max(8, min(pw - self.width() - 8, new_pos.x()))
@@ -72,92 +70,77 @@ class TimerHUD(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
         theme = get_current_theme()
 
-        # 1. Frosted glass card backing
+        # Card background
         bg_rect = QRectF(2, 2, self.width() - 4, self.height() - 4)
         painter.setBrush(QBrush(QColor(theme.bg_card)))
         painter.setPen(QPen(QColor(theme.border), 1.2))
-        painter.drawRoundedRect(bg_rect, 14, 14)
+        painter.drawRoundedRect(bg_rect, 12, 12)
 
-        # 2. Ring geometry
-        center_x = self.width() / 2.0
-        center_y = 48.0
-        radius = 32.0
-        ring_rect = QRectF(center_x - radius, center_y - radius, radius * 2, radius * 2)
+        # Ring dimensions
+        cx = self.width() / 2.0
+        cy = 46.0
+        radius = 31.0
+        ring_rect = QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
 
-        # Background track
+        # Track ring
         pen_track = QPen(QColor(theme.ring_track), 4.5)
         pen_track.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(pen_track)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawEllipse(ring_rect)
 
-        # Active countdown arc
-        span_angle = int(-self.fraction * 360 * 16)
-        start_angle = 90 * 16
-
+        # Active arc — use theme accent, override for urgent states
         if self.remaining_seconds <= 10.0:
-            arc_color = QColor(255, 75, 75)
+            arc_color = QColor(220, 50, 50)     # urgent red (neutral, no purple)
         elif self.remaining_seconds <= 30.0:
-            arc_color = QColor(255, 155, 45)
+            arc_color = QColor(220, 140, 30)    # warning amber
         elif self.is_paused:
             arc_color = QColor(theme.text_muted)
         else:
             arc_color = QColor(theme.accent)
 
+        span_angle = int(-self.fraction * 360 * 16)
         pen_arc = QPen(arc_color, 4.8)
         pen_arc.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(pen_arc)
-        painter.drawArc(ring_rect, start_angle, span_angle)
+        painter.drawArc(ring_rect, 90 * 16, span_angle)
 
-        # 3. Center Digital Countdown: "MM:SS"
-        total_sec = max(0, int(math_ceil(self.remaining_seconds)))
+        # Countdown text
+        total_sec = max(0, math.ceil(int(self.remaining_seconds)) if self.remaining_seconds > 0 else 0)
+        total_sec = max(0, int(math.ceil(self.remaining_seconds)))
         minutes = total_sec // 60
         seconds = total_sec % 60
         time_text = f"{minutes}:{seconds:02d}"
 
         painter.setPen(QColor(theme.text_primary))
-        font_digits = QFont("Segoe UI", 13, QFont.Weight.Bold)
-        font_digits.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
-        painter.setFont(font_digits)
+        painter.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         painter.drawText(ring_rect, Qt.AlignmentFlag.AlignCenter, time_text)
 
-        # 4. Pose Duration micro-badge (e.g. "2 MIN POSE")
+        # Duration badge
         if self.duration_seconds >= 60:
-            dur_mins = self.duration_seconds // 60
-            unit = "MIN" if dur_mins == 1 else "MINS"
-            badge_text = f"{dur_mins} {unit} POSE"
+            d = self.duration_seconds // 60
+            badge_text = f"{d} {'MIN' if d == 1 else 'MINS'} POSE"
         else:
             badge_text = f"{self.duration_seconds}s POSE"
 
-        badge_rect = QRectF(10, 88, self.width() - 20, 18)
-        painter.setBrush(QBrush(QColor(255, 255, 255, 18)))
+        badge_rect = QRectF(10, 86, self.width() - 20, 17)
+        painter.setBrush(QBrush(QColor(theme.accent + "22")))
         painter.setPen(QPen(QColor(theme.border), 0.8))
         painter.drawRoundedRect(badge_rect, 5, 5)
-
         painter.setPen(QColor(theme.accent))
-        font_badge = QFont("Segoe UI", 8, QFont.Weight.DemiBold)
-        font_badge.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.4)
-        painter.setFont(font_badge)
+        painter.setFont(QFont("Segoe UI", 8, QFont.Weight.DemiBold))
         painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, badge_text)
 
-        # 5. Pose Counter: "Pose 3 of 20"
+        # Pose counter
         count_text = f"Pose {self.pose_index + 1} / {max(1, self.total_poses)}"
         painter.setPen(QColor(theme.text_muted))
-        font_count = QFont("Segoe UI", 8)
-        painter.setFont(font_count)
-        painter.drawText(QRectF(10, 110, self.width() - 20, 16), Qt.AlignmentFlag.AlignCenter, count_text)
+        painter.setFont(QFont("Segoe UI", 8))
+        painter.drawText(QRectF(10, 108, self.width() - 20, 16), Qt.AlignmentFlag.AlignCenter, count_text)
 
-        # 6. Paused Pill
+        # Paused label
         if self.is_paused:
-            paused_rect = QRectF(12, 128, self.width() - 24, 14)
-            painter.setPen(QColor(245, 180, 70))
-            font_p = QFont("Segoe UI", 7, QFont.Weight.Bold)
-            painter.setFont(font_p)
-            painter.drawText(paused_rect, Qt.AlignmentFlag.AlignCenter, "PAUSED (Space)")
-
-def math_ceil(val: float) -> int:
-    import math
-    return int(math.ceil(val))
+            painter.setPen(QColor(theme.text_muted))
+            painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
+            painter.drawText(QRectF(10, 126, self.width() - 20, 14), Qt.AlignmentFlag.AlignCenter, "PAUSED")
