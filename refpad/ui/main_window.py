@@ -1,42 +1,43 @@
 """
-Main Floating Window for RefPad.
-Frameless, rounded corners, draggable, resizable, always-on-top picture-in-picture.
-Houses both Line of Action mode and BeeRef infinite board mode.
+Main Floating Window for RefPad (Modern Glass Aesthetic).
+Full-bleed edge-to-edge canvas with floating auto-dimming glass dock,
+segmented mode switcher, and multi-touch / tablet stylus integration.
 """
 from typing import List, Optional
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QStackedWidget, QFileDialog, QMessageBox, QApplication
+    QWidget, QStackedWidget, QFileDialog, QMessageBox, QMenu, QApplication, QPushButton
 )
 from PySide6.QtGui import (
     QPainter, QColor, QPen, QBrush, QKeyEvent, QMouseEvent, QCursor
 )
-from PySide6.QtCore import Qt, QPoint, QRect, Signal
+from PySide6.QtCore import Qt, QPoint, QRect, Signal, QRectF
 
 from refpad.engine.source_manager import SourceManager
 from refpad.engine.session_engine import SessionEngine
 from refpad.engine.audio import SoundCue
 from refpad.models.item import RefItem
-from refpad.ui.top_bar import TopBar
-from refpad.ui.bottom_bar import BottomBar
+from refpad.ui.widgets import SegmentedPillSwitch
+from refpad.ui.floating_dock import FloatingDock
 from refpad.ui.action_view import ActionView
 from refpad.ui.canvas_view import CanvasView
 
-RESIZE_MARGIN = 8
+RESIZE_MARGIN = 10
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
 
-        # Frameless and Always-on-top
+        # Frameless, Always-on-top, Translucent window
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.SubWindow
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setMouseTracking(True)
 
-        self.resize(720, 560)
-        self.setMinimumSize(420, 320)
+        self.resize(760, 580)
+        self.setMinimumSize(400, 300)
 
         # Core Engines
         self.source_manager = SourceManager()
@@ -53,60 +54,89 @@ class MainWindow(QWidget):
         self._connect_signals()
 
     def _init_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(1, 1, 1, 1)
-        main_layout.setSpacing(0)
-
-        # 1. Top Navigation & Header Bar
-        self.top_bar = TopBar(self)
-        main_layout.addWidget(self.top_bar)
-
-        # 2. Central Stacked Views
+        # 1. Edge-to-Edge Central Stacked View
         self.stacked_views = QStackedWidget(self)
-
         self.action_view = ActionView(self)
         self.canvas_view = CanvasView(self)
 
         self.stacked_views.addWidget(self.action_view)  # index 0: Line of Action
         self.stacked_views.addWidget(self.canvas_view)  # index 1: BeeRef Board
 
-        main_layout.addWidget(self.stacked_views)
+        # 2. Floating Top Mode Switcher
+        self.pill_switch = SegmentedPillSwitch(self)
 
-        # 3. Bottom Controls Bar
-        self.bottom_bar = BottomBar(self)
-        main_layout.addWidget(self.bottom_bar)
+        # 3. Floating Close & Min buttons (Top Right)
+        self.btn_close = QPushButton("✕", self)
+        self.btn_close.setFixedSize(26, 26)
+        self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_close.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(20, 22, 28, 180);
+                border: 1px solid rgba(255, 255, 255, 22);
+                border-radius: 6px;
+                color: #ff7b72;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #da3633;
+                color: white;
+            }
+        """)
+        self.btn_close.clicked.connect(self.close)
+
+        self.btn_min = QPushButton("—", self)
+        self.btn_min.setFixedSize(26, 26)
+        self.btn_min.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_min.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(20, 22, 28, 180);
+                border: 1px solid rgba(255, 255, 255, 22);
+                border-radius: 6px;
+                color: #c9d1d9;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 30);
+                color: white;
+            }
+        """)
+        self.btn_min.clicked.connect(self.showMinimized)
+
+        # 4. Floating Glass Bottom Dock
+        self.floating_dock = FloatingDock(self)
 
     def _connect_signals(self):
-        # Top Bar
-        self.top_bar.mode_changed.connect(self._on_mode_changed)
-        self.top_bar.pin_toggled.connect(self._on_pin_toggled)
-        self.top_bar.opacity_changed.connect(self._on_opacity_changed)
-        self.top_bar.minimize_requested.connect(self.showMinimized)
-        self.top_bar.close_requested.connect(self.close)
-        self.top_bar.open_folder_requested.connect(self.open_folder_dialog)
-        self.top_bar.open_pdf_requested.connect(self.open_pdf_dialog)
+        # Top Mode Switch
+        self.pill_switch.mode_changed.connect(self._on_mode_changed)
+
+        # Activity detection wakes up the dock
+        self.action_view.user_activity_detected.connect(self.floating_dock.wake_dock)
+        self.canvas_view.user_activity_detected.connect(self.floating_dock.wake_dock)
 
         # Drag & Drop onto views
         self.action_view.files_dropped.connect(self.handle_incoming_files)
         self.canvas_view.files_dropped.connect(self.handle_incoming_files)
         self.canvas_view.start_session_with_item.connect(self._on_start_session_with_item)
 
-        # Bottom Bar Line of Action controls
-        self.bottom_bar.play_pause_clicked.connect(self.session_engine.toggle_pause)
-        self.bottom_bar.next_clicked.connect(self.session_engine.next_pose)
-        self.bottom_bar.prev_clicked.connect(self.session_engine.prev_pose)
-        self.bottom_bar.restart_clicked.connect(self.session_engine.restart_current_pose)
-        self.bottom_bar.duration_selected.connect(self.session_engine.set_duration)
-        self.bottom_bar.ladder_selected.connect(self.session_engine.set_ladder_mode)
+        # Floating Dock actions
+        self.floating_dock.play_pause_clicked.connect(self.session_engine.toggle_pause)
+        self.floating_dock.next_clicked.connect(self.session_engine.next_pose)
+        self.floating_dock.prev_clicked.connect(self.session_engine.prev_pose)
+        self.floating_dock.duration_selected.connect(self.session_engine.set_duration)
+        self.floating_dock.ladder_selected.connect(self.session_engine.set_ladder_mode)
+        self.floating_dock.open_folder_requested.connect(self.open_folder_dialog)
+        self.floating_dock.open_pdf_requested.connect(self.open_pdf_dialog)
+        self.floating_dock.pin_toggled.connect(self._on_pin_toggled)
 
-        # Filter toggles
-        self.bottom_bar.flip_clicked.connect(self._toggle_flip)
-        self.bottom_bar.grayscale_clicked.connect(self._toggle_grayscale)
-        self.bottom_bar.silhouette_clicked.connect(self._toggle_silhouette)
+        # Filters
+        self.floating_dock.flip_clicked.connect(self._toggle_flip)
+        self.floating_dock.grayscale_clicked.connect(self._toggle_grayscale)
 
-        # Canvas mode actions
-        self.bottom_bar.fit_all_clicked.connect(self.canvas_view.fit_all_items)
-        self.bottom_bar.auto_arrange_clicked.connect(lambda: self.canvas_view.auto_arrange_items())
+        # Canvas actions
+        self.floating_dock.fit_all_clicked.connect(self.canvas_view.fit_all_items)
+        self.floating_dock.auto_arrange_clicked.connect(lambda: self.canvas_view.auto_arrange_items())
 
         # Session Engine signals
         self.session_engine.tick.connect(self.action_view.timer_hud.update_time)
@@ -114,13 +144,34 @@ class MainWindow(QWidget):
         self.session_engine.session_paused.connect(self._on_session_paused)
         self.session_engine.chime_requested.connect(self.sound_cue.play_chime)
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        w = self.width()
+        h = self.height()
+
+        # Stack fills window completely
+        self.stacked_views.setGeometry(0, 0, w, h)
+
+        # Center Top Mode Switcher
+        switch_w = self.pill_switch.sizeHint().width() + 10
+        self.pill_switch.setGeometry(int((w - switch_w) / 2), 12, switch_w, 34)
+
+        # Top-right window buttons
+        self.btn_close.move(w - 36, 12)
+        self.btn_min.move(w - 68, 12)
+
+        # Center Bottom Floating Dock
+        dock_w = self.floating_dock.sizeHint().width()
+        self.floating_dock.setGeometry(int((w - dock_w) / 2), h - 60, dock_w, 48)
+
     def _on_mode_changed(self, mode: str):
         if mode == 'action':
             self.stacked_views.setCurrentWidget(self.action_view)
-            self.bottom_bar.set_mode('action')
+            self.floating_dock.set_mode('action')
         else:
             self.stacked_views.setCurrentWidget(self.canvas_view)
-            self.bottom_bar.set_mode('canvas')
+            self.floating_dock.set_mode('canvas')
+        self.resizeEvent(None)
 
     def _on_pin_toggled(self, pinned: bool):
         flags = self.windowFlags()
@@ -131,19 +182,14 @@ class MainWindow(QWidget):
         self.setWindowFlags(flags)
         self.show()
 
-    def _on_opacity_changed(self, opacity: float):
-        self.setWindowOpacity(opacity)
-
     def _on_pose_changed(self, index: int, item: RefItem, duration: int):
         self.action_view.set_item(item)
         self.action_view.timer_hud.update_pose_info(index, len(self.source_manager.items), duration)
-        # Update filter button states to reflect current item
-        self.bottom_bar.btn_flip.setChecked(item.is_flipped_h)
-        self.bottom_bar.btn_gray.setChecked(item.is_grayscale)
-        self.bottom_bar.btn_silh.setChecked(item.is_silhouette)
+        self.floating_dock.btn_flip.setActive(item.is_flipped_h)
+        self.floating_dock.btn_gray.setActive(item.is_grayscale)
 
     def _on_session_paused(self, is_paused: bool):
-        self.bottom_bar.set_paused(is_paused)
+        self.floating_dock.set_paused(is_paused)
         self.action_view.timer_hud.set_paused(is_paused)
 
     def _toggle_flip(self):
@@ -151,33 +197,24 @@ class MainWindow(QWidget):
         if item:
             item.toggle_flip()
             self.action_view.refresh_transforms()
-            self.bottom_bar.btn_flip.setChecked(item.is_flipped_h)
+            self.floating_dock.btn_flip.setActive(item.is_flipped_h)
 
     def _toggle_grayscale(self):
         item = self.session_engine.current_item
         if item:
             item.toggle_grayscale()
             self.action_view.refresh_transforms()
-            self.bottom_bar.btn_gray.setChecked(item.is_grayscale)
-
-    def _toggle_silhouette(self):
-        item = self.session_engine.current_item
-        if item:
-            item.toggle_silhouette()
-            self.action_view.refresh_transforms()
-            self.bottom_bar.btn_silh.setChecked(item.is_silhouette)
+            self.floating_dock.btn_gray.setActive(item.is_grayscale)
 
     def _on_start_session_with_item(self, target_item: RefItem):
-        """When double clicking an item in BeeRef board, start session from it."""
         try:
             idx = self.source_manager.items.index(target_item)
             self.session_engine.current_index = idx
         except ValueError:
             pass
-        self.top_bar.set_mode('action')
+        self.pill_switch.set_mode('action')
         self.session_engine.start_session()
 
-    # Ingestion Handlers
     def open_folder_dialog(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Image Reference Folder")
         if folder:
@@ -191,7 +228,6 @@ class MainWindow(QWidget):
             self._apply_loaded_items(items)
 
     def handle_incoming_files(self, paths: List[str]):
-        """Triggered when files or folders are dropped onto the window."""
         import os
         if len(paths) == 1 and os.path.isdir(paths[0]):
             items = self.source_manager.load_folder(paths[0], recursive=True, shuffle=True)
@@ -206,18 +242,14 @@ class MainWindow(QWidget):
             QMessageBox.information(self, "No Images Found", "No valid image files or PDF pages were found.")
             return
 
-        # 1. Update Line of Action session
         self.session_engine.set_items(items)
-
-        # 2. Update BeeRef Canvas board
         self.canvas_view.add_ref_items(items, auto_tile=True)
 
-    # Keyboard Express Keys for Artists
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
 
         if key == Qt.Key.Key_Tab:
-            self.top_bar.toggle_mode()
+            self.pill_switch.toggle_mode()
             event.accept()
             return
         elif key == Qt.Key.Key_Space:
@@ -244,22 +276,27 @@ class MainWindow(QWidget):
             self._toggle_grayscale()
             event.accept()
             return
-        elif key == Qt.Key.Key_C:
-            self._toggle_silhouette()
+        elif key == Qt.Key.Key_T:
+            self.floating_dock.btn_pin.click()
             event.accept()
             return
-        elif key == Qt.Key.Key_T:
-            self.top_bar.btn_pin.click()
+        elif key == Qt.Key.Key_F:
+            if self.pill_switch.current_mode == 'canvas':
+                self.canvas_view.fit_all_items()
+            else:
+                self.action_view.zoom_factor = 1.0
+                self.action_view.pan_offset = QPoint(0, 0)
+                self.action_view.update()
             event.accept()
             return
         elif key == Qt.Key.Key_BracketLeft:
-            new_val = max(20, self.top_bar.slider_opacity.value() - 10)
-            self.top_bar.slider_opacity.setValue(new_val)
+            op = max(0.2, self.windowOpacity() - 0.1)
+            self.setWindowOpacity(op)
             event.accept()
             return
         elif key == Qt.Key.Key_BracketRight:
-            new_val = min(100, self.top_bar.slider_opacity.value() + 10)
-            self.top_bar.slider_opacity.setValue(new_val)
+            op = min(1.0, self.windowOpacity() + 0.1)
+            self.setWindowOpacity(op)
             event.accept()
             return
 
@@ -267,17 +304,19 @@ class MainWindow(QWidget):
 
     # Window Resizing and Dragging
     def mousePressEvent(self, event: QMouseEvent):
+        self.floating_dock.wake_dock()
         if event.button() == Qt.MouseButton.LeftButton:
             edge = self._get_edge(event.pos())
             if edge:
                 self.resizing_edge = edge
                 self.resize_start_geometry = self.geometry()
                 self.resize_start_mouse = event.globalPosition().toPoint()
-            elif event.pos().y() <= self.top_bar.height() + 10:
+            elif event.pos().y() <= 45 or event.modifiers() & Qt.KeyboardModifier.AltModifier:
                 self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
+        self.floating_dock.wake_dock()
         if self.resizing_edge and self.resize_start_geometry and self.resize_start_mouse:
             diff = event.globalPosition().toPoint() - self.resize_start_mouse
             geo = QRect(self.resize_start_geometry)
@@ -300,7 +339,6 @@ class MainWindow(QWidget):
             event.accept()
             return
         else:
-            # Update cursor for edges
             edge = self._get_edge(event.pos())
             if edge in ("top_left", "bottom_right"):
                 self.setCursor(Qt.CursorShape.SizeFDiagCursor)
@@ -355,9 +393,8 @@ class MainWindow(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        # Sleek dark window background with subtle border
         rect = self.rect().adjusted(1, 1, -1, -1)
-        painter.setBrush(QBrush(QColor(18, 20, 24)))
-        painter.setPen(QPen(QColor(255, 255, 255, 28), 1.2))
-        painter.drawRoundedRect(rect, 10, 10)
+        # Deep slate background card with sleek rounded border
+        painter.setBrush(QBrush(QColor(13, 14, 18)))
+        painter.setPen(QPen(QColor(255, 255, 255, 30), 1.2))
+        painter.drawRoundedRect(rect, 14, 14)

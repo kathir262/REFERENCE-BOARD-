@@ -1,5 +1,7 @@
 """
-BeeRef Infinite Canvas View: Freeform 2D moodboard, zoomable, pannable, multi-item reference board.
+BeeRef Infinite Canvas View (Modern 2D Moodboard).
+Full-bleed infinite canvas with subtle dot grid, smooth pinch-to-zoom,
+and multi-item drag & drop arrangement.
 """
 from typing import List, Optional
 import math
@@ -16,7 +18,8 @@ from refpad.ui.canvas_item import CanvasRefItem
 
 class CanvasView(QGraphicsView):
     files_dropped = Signal(list)
-    start_session_with_item = Signal(object)  # (RefItem)
+    start_session_with_item = Signal(object)
+    user_activity_detected = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -27,11 +30,6 @@ class CanvasView(QGraphicsView):
         self.viewport().setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
 
-        # Multi-touch tracking
-        self.touch_initial_dist = 0.0
-        self.touch_last_center = QPointF(0, 0)
-
-        # Rendering hints for super crisp high-performance drawing
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
@@ -41,15 +39,40 @@ class CanvasView(QGraphicsView):
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
 
-        # Background color (BeeRef dark slate)
-        self.setBackgroundBrush(QBrush(QColor(19, 21, 26)))
+        # Deep slate background
+        self.setBackgroundBrush(QBrush(QColor(14, 15, 20)))
 
         self.is_panning = False
         self.pan_start_pos = QPointF(0, 0)
+        self.touch_initial_dist = 0.0
+        self.touch_last_center = QPointF(0, 0)
         self.setAcceptDrops(True)
 
+    def drawBackground(self, painter: QPainter, rect: QRectF):
+        """Draw subtle dot grid pattern on infinite canvas."""
+        super().drawBackground(painter, rect)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        painter.setPen(QColor(255, 255, 255, 12))
+
+        grid_size = 50
+        left = int(rect.left()) - (int(rect.left()) % grid_size)
+        top = int(rect.top()) - (int(rect.top()) % grid_size)
+
+        points = []
+        x = left
+        while x < rect.right():
+            y = top
+            while y < rect.bottom():
+                points.append(QPointF(x, y))
+                y += grid_size
+            x += grid_size
+
+        if points:
+            painter.drawPoints(points)
+        painter.restore()
+
     def add_ref_items(self, items: List[RefItem], auto_tile: bool = True):
-        """Add RefItems onto the infinite canvas."""
         canvas_items = []
         for item in items:
             c_item = CanvasRefItem(item)
@@ -60,7 +83,6 @@ class CanvasView(QGraphicsView):
             self.auto_arrange_items(canvas_items)
 
     def auto_arrange_items(self, items: Optional[List[CanvasRefItem]] = None):
-        """Tile items neatly in a grid (BeeRef style pack)."""
         if items is None:
             items = [it for it in self.scene.items() if isinstance(it, CanvasRefItem)]
         if not items:
@@ -83,16 +105,20 @@ class CanvasView(QGraphicsView):
                 y_cursor += row_max_h + spacing
                 row_max_h = 0
 
-        # Center view on items
         self.fit_all_items()
+
+    def fit_all_items(self):
+        items_rect = self.scene.itemsBoundingRect()
+        if not items_rect.isNull() and items_rect.width() > 0:
+            self.fitInView(items_rect.adjusted(-60, -60, 60, 60), Qt.AspectRatioMode.KeepAspectRatio)
 
     def event(self, event: QEvent) -> bool:
         """Handle 2-finger pinch-zoom and pan on infinite canvas with palm rejection."""
         if event.type() in (QEvent.Type.TouchBegin, QEvent.Type.TouchUpdate, QEvent.Type.TouchEnd):
             touch_event: QTouchEvent = event
             points = touch_event.points()
+            self.user_activity_detected.emit()
 
-            # Filter palm contacts
             valid = [p for p in points if max(p.ellipseDiameters().width(), p.ellipseDiameters().height()) < 42]
 
             if len(valid) == 2:
@@ -105,15 +131,12 @@ class CanvasView(QGraphicsView):
                     self.touch_initial_dist = dist
                     self.touch_last_center = center
                 elif touch_event.type() == QEvent.Type.TouchUpdate:
-                    # 1. Pinch zoom
                     if self.touch_initial_dist > 15:
                         scale_factor = dist / self.touch_initial_dist
-                        # Clamp single-frame step
                         step = max(0.9, min(1.1, scale_factor))
                         self.scale(step, step)
                         self.touch_initial_dist = dist
 
-                    # 2. Pan
                     delta = center - self.touch_last_center
                     self.horizontalScrollBar().setValue(int(self.horizontalScrollBar().value() - delta.x()))
                     self.verticalScrollBar().setValue(int(self.verticalScrollBar().value() - delta.y()))
@@ -126,6 +149,7 @@ class CanvasView(QGraphicsView):
 
     def tabletEvent(self, event: QTabletEvent):
         """Stylus barrel button pan on canvas."""
+        self.user_activity_detected.emit()
         if event.buttons() & Qt.MouseButton.RightButton:
             if event.type() == QEvent.Type.TabletMove:
                 delta = event.position() - self.pan_start_pos
@@ -136,19 +160,14 @@ class CanvasView(QGraphicsView):
             return
         super().tabletEvent(event)
 
-    def fit_all_items(self):
-        items_rect = self.scene.itemsBoundingRect()
-        if not items_rect.isNull() and items_rect.width() > 0:
-            self.fitInView(items_rect.adjusted(-60, -60, 60, 60), Qt.AspectRatioMode.KeepAspectRatio)
-
     def wheelEvent(self, event: QWheelEvent):
-        # Zoom centered at cursor
+        self.user_activity_detected.emit()
         delta = event.angleDelta().y()
         factor = 1.15 if delta > 0 else 0.85
         self.scale(factor, factor)
 
     def mousePressEvent(self, event: QMouseEvent):
-        # Middle click or Space+Left click initiates smooth pan
+        self.user_activity_detected.emit()
         if event.button() == Qt.MouseButton.MiddleButton or (event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.SpaceModifier):
             self.is_panning = True
             self.pan_start_pos = event.position()
@@ -158,6 +177,7 @@ class CanvasView(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
+        self.user_activity_detected.emit()
         if self.is_panning:
             delta = event.position() - self.pan_start_pos
             self.pan_start_pos = event.position()
@@ -176,7 +196,7 @@ class CanvasView(QGraphicsView):
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):
-        # Double clicking an item starts Line of Action session starting at that item!
+        self.user_activity_detected.emit()
         item = self.itemAt(event.position().toPoint())
         if isinstance(item, CanvasRefItem):
             self.start_session_with_item.emit(item.ref_item)
@@ -185,7 +205,6 @@ class CanvasView(QGraphicsView):
         super().mouseDoubleClickEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent):
-        # Flip, Grayscale, or Delete selected items
         selected = [it for it in self.scene.selectedItems() if isinstance(it, CanvasRefItem)]
         if selected:
             if event.key() == Qt.Key.Key_H:
@@ -200,14 +219,13 @@ class CanvasView(QGraphicsView):
                     it.update_transformations()
                 event.accept()
                 return
-            elif event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
+            elif event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
                 for it in selected:
                     self.scene.removeItem(it)
                 event.accept()
                 return
         super().keyPressEvent(event)
 
-    # Drag & Drop handling
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
