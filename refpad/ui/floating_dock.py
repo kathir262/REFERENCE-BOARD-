@@ -1,6 +1,7 @@
 """
 Floating Glass Toolbar / Dock:
-Integrated with Full BeeRef Operations, Menu Bar (☰), Theme Switcher, and auto-dim.
+Integrated with Full BeeRef Operations, Menu Bar (☰), Mode Toggle, Theme Switcher, and auto-dim.
+Zero hardcoded purple — 100% theme-aware.
 """
 from typing import Callable, List, Tuple
 from PySide6.QtWidgets import (
@@ -62,7 +63,7 @@ class FloatingDock(QWidget):
     def _init_ui(self):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(5)
+        layout.setSpacing(6)
 
         # 0. Menu Bar Button (☰ All BeeRef & App Options)
         self.btn_menu = QPushButton("☰")
@@ -97,7 +98,6 @@ class FloatingDock(QWidget):
         # Separator
         self.sep = QFrame()
         self.sep.setFrameShape(QFrame.Shape.VLine)
-        self.sep.setStyleSheet("color: rgba(255, 255, 255, 25); margin: 6px 2px;")
         layout.addWidget(self.sep)
 
         # 3. Artist Power Tools: Flip, Grayscale
@@ -120,22 +120,28 @@ class FloatingDock(QWidget):
         self.btn_grid = QPushButton("⊞ Pack")
         self.btn_grid.setFixedHeight(34)
         self.btn_grid.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_grid.setToolTip("Pack & Tile References (P)")
+        self.btn_grid.setToolTip("Pack & Tile References into Neat Grid (P)")
         self.btn_grid.clicked.connect(self.auto_arrange_clicked.emit)
 
         layout.addWidget(self.btn_fit)
         layout.addWidget(self.btn_grid)
 
         # Separator 2
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.VLine)
-        sep2.setStyleSheet("color: rgba(255, 255, 255, 25); margin: 6px 2px;")
-        layout.addWidget(sep2)
+        self.sep2 = QFrame()
+        self.sep2.setFrameShape(QFrame.Shape.VLine)
+        layout.addWidget(self.sep2)
 
-        # 5. Quick Sources: Folder, PDF, Save
+        # 5. Quick Sources: PDF, Folder, Save
+        self.btn_pdf = QPushButton("📄")
+        self.btn_pdf.setFixedSize(34, 34)
+        self.btn_pdf.setToolTip("Open Art or Anatomy PDF Book")
+        self.btn_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_pdf.clicked.connect(self.open_pdf_requested.emit)
+        layout.addWidget(self.btn_pdf)
+
         self.btn_folder = QPushButton("📁")
         self.btn_folder.setFixedSize(34, 34)
-        self.btn_folder.setToolTip("Open Image Folder")
+        self.btn_folder.setToolTip("Open Image/PDF Folder")
         self.btn_folder.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_folder.clicked.connect(self.open_folder_requested.emit)
         layout.addWidget(self.btn_folder)
@@ -193,25 +199,21 @@ class FloatingDock(QWidget):
         menu = QMenu(self)
         self._style_menu(menu)
 
-        # --- File Submenu ---
         menu_file = menu.addMenu("📁 File")
         self._style_menu(menu_file)
-        menu_file.addAction("New Board", self._on_new_board)
         menu_file.addAction("Open Board (.refpad / .bee)... (Ctrl+O)", self.open_board_requested.emit)
         menu_file.addAction("Save Board (Ctrl+S)", self.save_board_requested.emit)
         menu_file.addSeparator()
-        menu_file.addAction("Open Image Folder...", self.open_folder_requested.emit)
         menu_file.addAction("Open PDF Reference Book...", self.open_pdf_requested.emit)
+        menu_file.addAction("Open Image / PDF Folder...", self.open_folder_requested.emit)
         menu_file.addSeparator()
         menu_file.addAction("Export Board as Image... (Ctrl+E)", self.export_image_requested.emit)
 
-        # --- Edit Submenu ---
         menu_edit = menu.addMenu("✏️ Edit")
         self._style_menu(menu_edit)
         menu_edit.addAction("Paste Image from Clipboard (Ctrl+V)", self.paste_requested.emit)
         menu_edit.addAction("Add Sticky Text Note (Ctrl+N)", self.add_note_requested.emit)
 
-        # --- Arrange Submenu (BeeRef powers) ---
         menu_arrange = menu.addMenu("📐 Arrange & Align")
         self._style_menu(menu_arrange)
         menu_arrange.addAction("Pack & Auto-Tile (P)", self.auto_arrange_clicked.emit)
@@ -226,7 +228,6 @@ class FloatingDock(QWidget):
         menu_arrange.addAction("Normalize Height (Same Height)", lambda: self.normalize_requested.emit('height'))
         menu_arrange.addAction("Normalize Width (Same Width)", lambda: self.normalize_requested.emit('width'))
 
-        # --- Themes Submenu ---
         menu_themes = menu.addMenu("🎨 Themes")
         self._style_menu(menu_themes)
         for key, pal in THEMES.items():
@@ -243,10 +244,6 @@ class FloatingDock(QWidget):
         self._apply_styles()
         self.theme_changed.emit(key)
         self.update()
-
-    def _on_new_board(self):
-        # Clear canvas
-        pass
 
     def _show_duration_menu(self):
         menu = QMenu(self)
@@ -267,7 +264,7 @@ class FloatingDock(QWidget):
             action.triggered.connect(lambda chk=False, s=sec, l=label: self._set_duration(s, l))
 
         menu.addSeparator()
-        action_ladder = menu.addAction("🔥 Warm-up Ladder (30s → 1m → 5m)")
+        action_ladder = menu.addAction("Warm-up Ladder (30s → 1m → 5m)")
         action_ladder.triggered.connect(self._set_ladder)
 
         menu.exec(self.btn_duration.mapToGlobal(self.btn_duration.rect().bottomLeft()))
@@ -315,7 +312,7 @@ class FloatingDock(QWidget):
             }}
             QMenu::item:selected {{
                 background-color: {theme.accent};
-                color: #000000 if "{theme.accent}" == "#ffffff" else #ffffff;
+                color: {theme.bg_dark};
             }}
             QMenu::separator {{
                 height: 1px;
@@ -347,8 +344,11 @@ class FloatingDock(QWidget):
         self.btn_duration.setStyleSheet(btn_style)
         self.btn_fit.setStyleSheet(btn_style)
         self.btn_grid.setStyleSheet(btn_style)
+        self.btn_pdf.setStyleSheet(btn_style)
         self.btn_folder.setStyleSheet(btn_style)
         self.btn_save.setStyleSheet(btn_style)
+        self.sep.setStyleSheet(f"color: {theme.border}; margin: 6px 2px;")
+        self.sep2.setStyleSheet(f"color: {theme.border}; margin: 6px 2px;")
         self.update()
 
     def paintEvent(self, event):

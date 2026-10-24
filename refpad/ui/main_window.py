@@ -1,20 +1,19 @@
 """
 Main Floating Window for RefPad.
-
-Architecture:
-  - Visible DRAG HANDLE at top (30px strip with grip dots) — click & drag to move window
-  - ALL 4 edges + 4 corners resize via per-child event-filter intercept
-  - Zero hardcoded purple — everything uses get_current_theme()
-  - Full BeeRef operations: Save, Open, Paste, Align, Normalize, Export, Sticky Notes
-  - Theme switcher: Black & White, Rose, Midnight, Paper
+Features:
+- Native Windows 60FPS drag & resize (startSystemMove / startSystemResize) across all 4 edges and corners.
+- Clearly visible, prominent Mode Switcher (Line of Action Practice vs BeeRef Board).
+- Complete PDF and Folder support with dedicated file pickers (PDFs always visible).
+- Zero hardcoded purple — 100% theme-aware.
 """
 import os
 from typing import List, Optional
 from PySide6.QtWidgets import (
-    QWidget, QStackedWidget, QFileDialog, QMessageBox, QApplication, QPushButton, QLabel
+    QWidget, QStackedWidget, QFileDialog, QMessageBox, QApplication, QPushButton,
+    QHBoxLayout, QVBoxLayout, QLabel, QFrame
 )
 from PySide6.QtGui import (
-    QPainter, QColor, QPen, QBrush, QKeyEvent, QMouseEvent, QPainterPath
+    QPainter, QColor, QPen, QBrush, QKeyEvent, QMouseEvent, QCursor, QFont
 )
 from PySide6.QtCore import Qt, QPoint, QRect, QRectF, QEvent, Signal
 
@@ -23,131 +22,220 @@ from refpad.engine.session_engine import SessionEngine
 from refpad.engine.audio import SoundCue
 from refpad.models.item import RefItem
 from refpad.models.board import BoardManager, base64_to_pixmap
-from refpad.ui.widgets import SegmentedPillSwitch
 from refpad.ui.floating_dock import FloatingDock
 from refpad.ui.action_view import ActionView
 from refpad.ui.canvas_view import CanvasView
 from refpad.ui.canvas_item import CanvasRefItem, CanvasTextItem
 from refpad.ui.themes import get_current_theme, set_current_theme, THEMES
 
-RESIZE_MARGIN = 10   # px from edge to trigger resize
-DRAG_HANDLE_H = 32   # height of the top drag handle strip
-
+RESIZE_MARGIN = 12
 
 class TitleBar(QWidget):
     """
-    Visible drag handle at the top of the window.
-    Thin strip with grip dots in the center, mode switch centered, close/min on right.
-    Click & drag anywhere on this bar to move the whole window.
+    Main header bar of RefPad:
+    - Left: Grip icon + 'RefPad' title (click-drag to move window anywhere)
+    - Center: Prominent Mode Switcher ([ Practice Mode ]  [ BeeRef Board ])
+    - Right: Open PDF, Open Files, Open Folder, Minimize, Close
     """
+    mode_switched = Signal(str)
+    open_pdf_requested = Signal()
+    open_files_requested = Signal()
+    open_folder_requested = Signal()
     close_clicked = Signal()
     min_clicked = Signal()
 
-    def __init__(self, pill_switch: SegmentedPillSwitch, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(DRAG_HANDLE_H)
+        self.setFixedHeight(40)
         self.setMouseTracking(True)
-        self.pill_switch = pill_switch
+        self.active_mode = "action"
 
-        # Track drag for moving the window
-        self._drag_active = False
-        self._drag_start_global = QPoint()
-        self._drag_start_win = QPoint()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 4, 10, 4)
+        layout.setSpacing(8)
 
-        # Close button
-        self.btn_close = QPushButton("✕", self)
-        self.btn_close.setFixedSize(22, 22)
-        self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_close.clicked.connect(self.close_clicked.emit)
+        # 1. Left: Drag Grip Handle
+        self.lbl_title = QLabel("⠿ RefPad")
+        self.lbl_title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        self.lbl_title.setToolTip("Click and drag to move window anywhere on your screen")
+        self.lbl_title.setCursor(Qt.CursorShape.SizeAllCursor)
+        layout.addWidget(self.lbl_title)
 
-        # Minimize button
-        self.btn_min = QPushButton("—", self)
-        self.btn_min.setFixedSize(22, 22)
+        layout.addSpacing(6)
+
+        # 2. Center: Mode Switcher (Line of Action vs BeeRef Board)
+        self.mode_container = QWidget()
+        mode_layout = QHBoxLayout(self.mode_container)
+        mode_layout.setContentsMargins(2, 2, 2, 2)
+        mode_layout.setSpacing(2)
+
+        self.btn_action = QPushButton("⏱ Practice (Line of Action)")
+        self.btn_canvas = QPushButton("🖼 BeeRef Board")
+
+        for b in (self.btn_action, self.btn_canvas):
+            b.setFixedHeight(28)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setCheckable(True)
+            mode_layout.addWidget(b)
+
+        self.btn_action.setChecked(True)
+        self.btn_action.clicked.connect(lambda: self.set_mode("action"))
+        self.btn_canvas.clicked.connect(lambda: self.set_mode("canvas"))
+
+        layout.addWidget(self.mode_container)
+
+        layout.addStretch()
+
+        # 3. Right: Quick Loaders & Window buttons
+        self.btn_pdf = QPushButton("📄 PDF")
+        self.btn_pdf.setToolTip("Open Art or Anatomy PDF Book")
+        self.btn_pdf.setFixedHeight(26)
+        self.btn_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_pdf.clicked.connect(self.open_pdf_requested.emit)
+        layout.addWidget(self.btn_pdf)
+
+        self.btn_files = QPushButton("🖼 Files")
+        self.btn_files.setToolTip("Open Reference Images or PDF Files (All formats visible)")
+        self.btn_files.setFixedHeight(26)
+        self.btn_files.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_files.clicked.connect(self.open_files_requested.emit)
+        layout.addWidget(self.btn_files)
+
+        self.btn_folder = QPushButton("📁 Folder")
+        self.btn_folder.setToolTip("Open Image/PDF Reference Folder")
+        self.btn_folder.setFixedHeight(26)
+        self.btn_folder.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_folder.clicked.connect(self.open_folder_requested.emit)
+        layout.addWidget(self.btn_folder)
+
+        layout.addSpacing(4)
+
+        # Minimize
+        self.btn_min = QPushButton("—")
+        self.btn_min.setFixedSize(24, 24)
         self.btn_min.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_min.clicked.connect(self.min_clicked.emit)
+        layout.addWidget(self.btn_min)
+
+        # Close
+        self.btn_close = QPushButton("✕")
+        self.btn_close.setFixedSize(24, 24)
+        self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_close.clicked.connect(self.close_clicked.emit)
+        layout.addWidget(self.btn_close)
+
+        self.apply_theme()
+
+    def set_mode(self, mode: str):
+        self.active_mode = mode
+        self.btn_action.setChecked(mode == "action")
+        self.btn_canvas.setChecked(mode == "canvas")
+        self.apply_theme()
+        self.mode_switched.emit(mode)
+
+    def toggle_mode(self):
+        new_mode = "canvas" if self.active_mode == "action" else "action"
+        self.set_mode(new_mode)
 
     def apply_theme(self):
         theme = get_current_theme()
-        base_btn = f"""
+        self.lbl_title.setStyleSheet(f"color: {theme.accent};")
+
+        # Container pill
+        self.mode_container.setStyleSheet(f"""
+            QWidget {{
+                background-color: {theme.bg_dark};
+                border: 1px solid {theme.border};
+                border-radius: 6px;
+            }}
+        """)
+
+        # Active / Inactive mode buttons
+        is_action = (self.active_mode == "action")
+        act_active = f"background-color: {theme.accent}; color: {theme.bg_dark}; font-weight: bold; border-radius: 4px; padding: 0 10px;"
+        act_inactive = f"background: transparent; color: {theme.text_muted}; font-weight: 500; border: none; border-radius: 4px; padding: 0 10px;"
+
+        self.btn_action.setStyleSheet(act_active if is_action else act_inactive)
+        self.btn_canvas.setStyleSheet(act_active if not is_action else act_inactive)
+
+        btn_style = f"""
+            QPushButton {{
+                background-color: {theme.bg_card};
+                border: 1px solid {theme.border};
+                border-radius: 5px;
+                color: {theme.text_primary};
+                font-family: 'Segoe UI', -apple-system;
+                font-size: 11px;
+                font-weight: 600;
+                padding: 0 8px;
+            }}
+            QPushButton:hover {{
+                background-color: {theme.accent};
+                color: {theme.bg_dark};
+            }}
+        """
+        self.btn_pdf.setStyleSheet(btn_style)
+        self.btn_files.setStyleSheet(btn_style)
+        self.btn_folder.setStyleSheet(btn_style)
+
+        close_style = f"""
             QPushButton {{
                 background: transparent;
                 border: 1px solid {theme.border};
                 border-radius: 5px;
                 color: {theme.text_muted};
-                font-size: 10px;
+                font-size: 11px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background: #e11d48;
+                color: #ffffff;
+                border-color: #e11d48;
+            }}
+        """
+        self.btn_close.setStyleSheet(close_style)
+
+        min_style = f"""
+            QPushButton {{
+                background: transparent;
+                border: 1px solid {theme.border};
+                border-radius: 5px;
+                color: {theme.text_muted};
+                font-size: 11px;
                 font-weight: bold;
             }}
             QPushButton:hover {{
                 background: {theme.accent};
                 color: {theme.bg_dark};
-                border-color: {theme.accent};
             }}
         """
-        self.btn_close.setStyleSheet(base_btn)
-        self.btn_min.setStyleSheet(base_btn)
-        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.btn_min.setStyleSheet(min_style)
         self.update()
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        w = self.width()
-        self.btn_close.move(w - 28, 5)
-        self.btn_min.move(w - 54, 5)
-        sw = self.pill_switch.sizeHint().width() + 8
-        self.pill_switch.setGeometry((w - sw) // 2, 1, sw, DRAG_HANDLE_H - 2)
-
-    # --- Direct drag handlers on the title bar ---
     def mousePressEvent(self, event: QMouseEvent):
+        # Native Windows 60FPS Drag & Move
         if event.button() == Qt.MouseButton.LeftButton:
             win = self.window()
-            self._drag_active = True
-            self._drag_start_global = event.globalPosition().toPoint()
-            self._drag_start_win = win.pos()
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
-            event.accept()
-        else:
-            super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event: QMouseEvent):
-        if self._drag_active:
-            delta = event.globalPosition().toPoint() - self._drag_start_global
-            self.window().move(self._drag_start_win + delta)
-            event.accept()
-        else:
-            super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event: QMouseEvent):
-        if event.button() == Qt.MouseButton.LeftButton and self._drag_active:
-            self._drag_active = False
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
-            event.accept()
-        else:
-            super().mouseReleaseEvent(event)
+            if win and win.windowHandle():
+                win.windowHandle().startSystemMove()
+                event.accept()
+                return
+        super().mousePressEvent(event)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         theme = get_current_theme()
-
         painter.fillRect(self.rect(), QColor(theme.bg_card))
-
-        # Bottom border
         painter.setPen(QPen(QColor(theme.border), 1))
         painter.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
-
-        # Grip dots (left side - visual cue for drag)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(theme.text_muted)))
-        cx, cy = 28, self.height() // 2
-        for dx in (-5, 0, 5):
-            for dy in (-3, 3):
-                painter.drawEllipse(QRectF(cx + dx - 1.5, cy + dy - 1.5, 3, 3))
 
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
 
+        # Native Windows Frameless Window with Always-on-top
         self.setWindowFlags(
             Qt.WindowType.Window |
             Qt.WindowType.FramelessWindowHint |
@@ -155,66 +243,71 @@ class MainWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMouseTracking(True)
-        self.resize(780, 600)
-        self.setMinimumSize(380, 280)
+        self.resize(800, 620)
+        self.setMinimumSize(420, 320)
 
         # Core Engines
         self.source_manager = SourceManager()
         self.session_engine = SessionEngine(self)
         self.sound_cue = SoundCue(self)
 
-        # Resize state
-        self.resizing_edge: Optional[str] = None
-        self.resize_start_geometry: Optional[QRect] = None
-        self.resize_start_mouse: Optional[QPoint] = None
-
         self.current_board_path: Optional[str] = None
 
         self._init_ui()
         self._connect_signals()
-        self._install_all_event_filters()
 
-    def _init_ui(self):
-        # Mode switch pill lives inside the title bar
-        self.pill_switch = SegmentedPillSwitch(self)
-
-        # Title bar (drag handle)
-        self.title_bar = TitleBar(self.pill_switch, self)
-        self.title_bar.close_clicked.connect(self.close)
-        self.title_bar.min_clicked.connect(self.showMinimized)
-
-        # Central stacked views
-        self.stacked_views = QStackedWidget(self)
-        self.action_view = ActionView(self)
-        self.canvas_view = CanvasView(self)
-        self.stacked_views.addWidget(self.action_view)
-        self.stacked_views.addWidget(self.canvas_view)
-
-        # Floating bottom dock
-        self.floating_dock = FloatingDock(self)
-
-        # Apply theme to title bar
-        self.title_bar.apply_theme()
-
-    def _install_all_event_filters(self):
-        """Install on every child so edge moves are captured everywhere."""
-        self.title_bar.installEventFilter(self)
+        # Install event filter to capture edge resize everywhere
+        self.installEventFilter(self)
         self.stacked_views.installEventFilter(self)
         self.action_view.installEventFilter(self)
-        self.canvas_view.installEventFilter(self)
         self.canvas_view.viewport().installEventFilter(self)
         self.floating_dock.installEventFilter(self)
 
-    def _connect_signals(self):
-        self.pill_switch.mode_changed.connect(self._on_mode_changed)
+    def _init_ui(self):
+        # Main layout
+        self.root_layout = QVBoxLayout(self)
+        self.root_layout.setContentsMargins(1, 1, 1, 1)
+        self.root_layout.setSpacing(0)
 
+        # 1. Header Bar with Grip Drag & Mode Switcher
+        self.title_bar = TitleBar(self)
+        self.root_layout.addWidget(self.title_bar)
+
+        # 2. Central Content Container
+        self.center_container = QWidget(self)
+        self.center_layout = QVBoxLayout(self.center_container)
+        self.center_layout.setContentsMargins(0, 0, 0, 0)
+        self.center_layout.setSpacing(0)
+
+        self.stacked_views = QStackedWidget(self.center_container)
+        self.action_view = ActionView(self)
+        self.canvas_view = CanvasView(self)
+        self.stacked_views.addWidget(self.action_view)  # 0: Practice
+        self.stacked_views.addWidget(self.canvas_view)  # 1: BeeRef Board
+        self.center_layout.addWidget(self.stacked_views)
+
+        self.root_layout.addWidget(self.center_container, 1)
+
+        # 3. Floating Bottom Dock
+        self.floating_dock = FloatingDock(self)
+
+    def _connect_signals(self):
+        # Title bar actions
+        self.title_bar.mode_switched.connect(self._on_mode_changed)
+        self.title_bar.open_pdf_requested.connect(self.open_pdf_dialog)
+        self.title_bar.open_files_requested.connect(self.open_files_dialog)
+        self.title_bar.open_folder_requested.connect(self.open_folder_dialog)
+        self.title_bar.min_clicked.connect(self.showMinimized)
+        self.title_bar.close_clicked.connect(self.close)
+
+        # Views
         self.action_view.user_activity_detected.connect(self.floating_dock.wake_dock)
         self.canvas_view.user_activity_detected.connect(self.floating_dock.wake_dock)
-
         self.action_view.files_dropped.connect(self.handle_incoming_files)
         self.canvas_view.files_dropped.connect(self.handle_incoming_files)
         self.canvas_view.start_session_with_item.connect(self._on_start_session_with_item)
 
+        # Dock actions
         self.floating_dock.play_pause_clicked.connect(self.session_engine.toggle_pause)
         self.floating_dock.next_clicked.connect(self.session_engine.next_pose)
         self.floating_dock.prev_clicked.connect(self.session_engine.prev_pose)
@@ -236,6 +329,7 @@ class MainWindow(QWidget):
         self.floating_dock.fit_all_clicked.connect(self.canvas_view.fit_all_items)
         self.floating_dock.auto_arrange_clicked.connect(lambda: self.canvas_view.auto_arrange_items())
 
+        # Session Engine
         self.session_engine.tick.connect(self.action_view.timer_hud.update_time)
         self.session_engine.pose_changed.connect(self._on_pose_changed)
         self.session_engine.session_paused.connect(self._on_session_paused)
@@ -244,149 +338,82 @@ class MainWindow(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         w, h = self.width(), self.height()
-        m = RESIZE_MARGIN  # leave perimeter for resize
+        # Position floating dock centered at bottom
+        dock_w = max(240, min(self.floating_dock.sizeHint().width(), w - 24))
+        self.floating_dock.setGeometry((w - dock_w) // 2, h - 56, dock_w, 48)
 
-        # Title bar full width at top
-        self.title_bar.setGeometry(m, m, w - m * 2, DRAG_HANDLE_H)
+    # --- Native Windows Edge Resizing & Dragging ---
+    def _get_edge_flags(self, pos: QPoint) -> Optional[Qt.Edge]:
+        m = RESIZE_MARGIN
+        w, h = self.width(), self.height()
+        x, y = pos.x(), pos.y()
 
-        # Stacked views fill the rest (below title bar, above dock)
-        content_top = m + DRAG_HANDLE_H
-        content_h = h - content_top - 60 - m
-        self.stacked_views.setGeometry(m, content_top, w - m * 2, content_h)
+        on_l = x <= m
+        on_r = x >= w - m
+        on_t = y <= m
+        on_b = y >= h - m
 
-        # Dock centered at bottom
-        dock_w = max(200, min(self.floating_dock.sizeHint().width(), w - m * 2))
-        self.floating_dock.setGeometry((w - dock_w) // 2, h - 60, dock_w, 48)
+        edges = None
+        if on_t and on_l: edges = Qt.Edge.TopEdge | Qt.Edge.LeftEdge
+        elif on_t and on_r: edges = Qt.Edge.TopEdge | Qt.Edge.RightEdge
+        elif on_b and on_l: edges = Qt.Edge.BottomEdge | Qt.Edge.LeftEdge
+        elif on_b and on_r: edges = Qt.Edge.BottomEdge | Qt.Edge.RightEdge
+        elif on_l: edges = Qt.Edge.LeftEdge
+        elif on_r: edges = Qt.Edge.RightEdge
+        elif on_t: edges = Qt.Edge.TopEdge
+        elif on_b: edges = Qt.Edge.BottomEdge
+        return edges
 
-    # ---------------------------------------------------------------
-    # Event filter — installed on all child widgets to intercept
-    # edge/corner resize. Drag is handled directly in TitleBar.
-    # ---------------------------------------------------------------
+    def _update_cursor_for_edges(self, edges: Optional[Qt.Edge]):
+        if not edges:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            return
+
+        if edges in (Qt.Edge.TopEdge | Qt.Edge.LeftEdge, Qt.Edge.BottomEdge | Qt.Edge.RightEdge):
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        elif edges in (Qt.Edge.TopEdge | Qt.Edge.RightEdge, Qt.Edge.BottomEdge | Qt.Edge.LeftEdge):
+            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+        elif edges in (Qt.Edge.LeftEdge, Qt.Edge.RightEdge):
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif edges in (Qt.Edge.TopEdge, Qt.Edge.BottomEdge):
+            self.setCursor(Qt.CursorShape.SizeVerCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
     def eventFilter(self, watched, event: QEvent) -> bool:
         t = event.type()
-
-        if t == QEvent.Type.MouseButtonPress:
-            ev: QMouseEvent = event
-            if ev.button() == Qt.MouseButton.LeftButton:
-                global_pos = ev.globalPosition().toPoint()
-                local_pos = self.mapFromGlobal(global_pos)
-                edge = self._get_edge(local_pos)
-                if edge:
-                    self.resizing_edge = edge
-                    self.resize_start_geometry = self.geometry()
-                    self.resize_start_mouse = global_pos
-                    self.setCursor(self._cursor_for_edge(edge))
-                    return True
-
-        elif t == QEvent.Type.MouseMove:
-            ev: QMouseEvent = event
-            global_pos = ev.globalPosition().toPoint()
-            local_pos = self.mapFromGlobal(global_pos)
-
-            if self.resizing_edge:
-                self._perform_resize(global_pos)
-                return True
-
-            # Update cursor on the main window only (not from child pass-through)
-            edge = self._get_edge(local_pos)
-            if edge:
-                self.setCursor(self._cursor_for_edge(edge))
-                return False  # don't swallow move so children still get it
+        if t == QEvent.Type.MouseMove:
+            m_event: QMouseEvent = event
+            local_pos = self.mapFromGlobal(m_event.globalPosition().toPoint())
+            edges = self._get_edge_flags(local_pos)
+            if edges:
+                self._update_cursor_for_edges(edges)
             else:
                 if watched is self:
                     self.setCursor(Qt.CursorShape.ArrowCursor)
 
-        elif t == QEvent.Type.MouseButtonRelease:
-            if self.resizing_edge:
-                self.resizing_edge = None
-                self.resize_start_geometry = None
-                self.resize_start_mouse = None
-                self.setCursor(Qt.CursorShape.ArrowCursor)
-                return True
+        elif t == QEvent.Type.MouseButtonPress:
+            m_event: QMouseEvent = event
+            if m_event.button() == Qt.MouseButton.LeftButton:
+                local_pos = self.mapFromGlobal(m_event.globalPosition().toPoint())
+                edges = self._get_edge_flags(local_pos)
+                if edges and self.windowHandle():
+                    # Native 60FPS Windows OS Resize
+                    self.windowHandle().startSystemResize(edges)
+                    return True
 
         return super().eventFilter(watched, event)
 
-    def _get_edge(self, pos: QPoint) -> Optional[str]:
-        m = RESIZE_MARGIN
-        w, h = self.width(), self.height()
-        x, y = pos.x(), pos.y()
-        on_l = x <= m;  on_r = x >= w - m
-        on_t = y <= m;  on_b = y >= h - m
-
-        if on_t and on_l:  return "top_left"
-        if on_t and on_r:  return "top_right"
-        if on_b and on_l:  return "bottom_left"
-        if on_b and on_r:  return "bottom_right"
-        if on_l:           return "left"
-        if on_r:           return "right"
-        if on_t:           return "top"
-        if on_b:           return "bottom"
-        return None
-
-    def _cursor_for_edge(self, edge: Optional[str]):
-        if edge in ("top_left", "bottom_right"): return Qt.CursorShape.SizeFDiagCursor
-        if edge in ("top_right", "bottom_left"): return Qt.CursorShape.SizeBDiagCursor
-        if edge in ("left", "right"):            return Qt.CursorShape.SizeHorCursor
-        if edge in ("top", "bottom"):            return Qt.CursorShape.SizeVerCursor
-        return Qt.CursorShape.ArrowCursor
-
-    def _perform_resize(self, global_pos: QPoint):
-        if not (self.resizing_edge and self.resize_start_geometry and self.resize_start_mouse):
-            return
-        diff = global_pos - self.resize_start_mouse
-        geo = QRect(self.resize_start_geometry)
-        e = self.resizing_edge
-        if "right"  in e: geo.setRight(geo.right()  + diff.x())
-        if "bottom" in e: geo.setBottom(geo.bottom() + diff.y())
-        if "left"   in e: geo.setLeft(geo.left()    + diff.x())
-        if "top"    in e: geo.setTop(geo.top()      + diff.y())
-        if geo.width() >= self.minimumWidth() and geo.height() >= self.minimumHeight():
-            self.setGeometry(geo)
-
-    # ---------------------------------------------------------------
-    # Also handle mouse events directly on the MainWindow background
-    # ---------------------------------------------------------------
     def mousePressEvent(self, event: QMouseEvent):
-        # This fires when clicking the BORDER / BACKGROUND of the main window
         if event.button() == Qt.MouseButton.LeftButton:
-            global_pos = event.globalPosition().toPoint()
-            local_pos = event.pos()
-            edge = self._get_edge(local_pos)
-            if edge:
-                self.resizing_edge = edge
-                self.resize_start_geometry = self.geometry()
-                self.resize_start_mouse = global_pos
+            edges = self._get_edge_flags(event.pos())
+            if edges and self.windowHandle():
+                self.windowHandle().startSystemResize(edges)
                 event.accept()
                 return
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event: QMouseEvent):
-        global_pos = event.globalPosition().toPoint()
-        if self.resizing_edge:
-            self._perform_resize(global_pos)
-            event.accept()
-            return
-        edge = self._get_edge(event.pos())
-        self.setCursor(self._cursor_for_edge(edge) if edge else Qt.CursorShape.ArrowCursor)
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event: QMouseEvent):
-        if self.resizing_edge:
-            self.resizing_edge = None
-            self.resize_start_geometry = None
-            self.resize_start_mouse = None
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-
-    def contextMenuEvent(self, event):
-        self.floating_dock._show_main_menu()
-        event.accept()
-
-    # ---------------------------------------------------------------
-    # Mode & Theme
-    # ---------------------------------------------------------------
+    # --- Mode & Theme Management ---
     def _on_mode_changed(self, mode: str):
         if mode == 'action':
             self.stacked_views.setCurrentWidget(self.action_view)
@@ -399,7 +426,6 @@ class MainWindow(QWidget):
         set_current_theme(theme_key)
         self.title_bar.apply_theme()
         self.floating_dock._apply_styles()
-        self.pill_switch._update_styles()
         self.action_view.update()
         self.canvas_view.viewport().update()
         self.action_view.timer_hud.update()
@@ -444,12 +470,64 @@ class MainWindow(QWidget):
             self.session_engine.current_index = idx
         except ValueError:
             pass
-        self.pill_switch.set_mode('action')
+        self.title_bar.set_mode('action')
         self.session_engine.start_session()
 
-    # ---------------------------------------------------------------
-    # Board I/O
-    # ---------------------------------------------------------------
+    # --- File & PDF Ingestion Dialogs ---
+    def open_files_dialog(self):
+        """File picker where BOTH images and PDF books are fully visible and selectable."""
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "Open Reference Images or PDF Books", "",
+            "All Supported (*.pdf *.png *.jpg *.jpeg *.webp *.bmp);;PDF Books (*.pdf);;Images (*.png *.jpg *.jpeg *.webp *.bmp);;All Files (*.*)"
+        )
+        if files:
+            self.handle_incoming_files(files)
+
+    def open_pdf_dialog(self):
+        """Dedicated PDF Book loader."""
+        pdf_path, _ = QFileDialog.getOpenFileName(
+            self, "Open Art or Anatomy PDF Book", "",
+            "PDF Files (*.pdf);;All Files (*.*)"
+        )
+        if pdf_path:
+            self.handle_incoming_files([pdf_path])
+
+    def open_folder_dialog(self):
+        """Folder crawler for images and PDFs."""
+        folder = QFileDialog.getExistingDirectory(self, "Select Reference Folder (Contains Images or PDFs)")
+        if folder:
+            items = self.source_manager.load_folder(folder, recursive=True, shuffle=False)
+            self._apply_loaded_items(items)
+
+    def handle_incoming_files(self, paths: List[str]):
+        """Handles dropped files, folders, or PDF books."""
+        if not paths:
+            return
+
+        if len(paths) == 1 and os.path.isdir(paths[0]):
+            items = self.source_manager.load_folder(paths[0], recursive=True, shuffle=False)
+        elif len(paths) == 1 and paths[0].lower().endswith(('.refpad', '.bee')):
+            self.open_board_dialog()
+            return
+        elif len(paths) == 1 and paths[0].lower().endswith('.pdf'):
+            items = self.source_manager.load_pdf(paths[0])
+        else:
+            items = self.source_manager.add_files(paths)
+
+        self._apply_loaded_items(items)
+
+    def _apply_loaded_items(self, items: List[RefItem]):
+        if not items:
+            QMessageBox.information(self, "No References Found", "No valid image files or PDF pages were found.")
+            return
+
+        # 1. Update practice session
+        self.session_engine.set_items(items)
+
+        # 2. Add to BeeRef infinite canvas
+        self.canvas_view.add_ref_items(items, auto_tile=True)
+
+    # --- BeeRef Board File I/O ---
     def save_board_dialog(self):
         file_path, _ = QFileDialog.getSaveFileName(
             self, "Save Reference Board",
@@ -515,38 +593,12 @@ class MainWindow(QWidget):
             if ok:
                 QMessageBox.information(self, "Exported", f"Saved to {os.path.basename(file_path)}")
 
-    def open_folder_dialog(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Image Reference Folder")
-        if folder:
-            self._apply_loaded_items(self.source_manager.load_folder(folder, recursive=True, shuffle=True))
+    # Context menu
+    def contextMenuEvent(self, event):
+        self.floating_dock._show_main_menu()
+        event.accept()
 
-    def open_pdf_dialog(self):
-        pdf_path, _ = QFileDialog.getOpenFileName(self, "Open PDF", "", "PDF Files (*.pdf)")
-        if pdf_path:
-            self._apply_loaded_items(self.source_manager.load_pdf(pdf_path))
-
-    def handle_incoming_files(self, paths: List[str]):
-        if len(paths) == 1 and os.path.isdir(paths[0]):
-            items = self.source_manager.load_folder(paths[0], recursive=True, shuffle=True)
-        elif len(paths) == 1 and paths[0].lower().endswith(('.refpad', '.bee')):
-            self.open_board_dialog()
-            return
-        elif len(paths) == 1 and paths[0].lower().endswith('.pdf'):
-            items = self.source_manager.load_pdf(paths[0])
-        else:
-            items = self.source_manager.add_files(paths)
-        self._apply_loaded_items(items)
-
-    def _apply_loaded_items(self, items: List[RefItem]):
-        if not items:
-            QMessageBox.information(self, "No Images Found", "No valid images or PDF pages found.")
-            return
-        self.session_engine.set_items(items)
-        self.canvas_view.add_ref_items(items, auto_tile=True)
-
-    # ---------------------------------------------------------------
-    # Keyboard Shortcuts
-    # ---------------------------------------------------------------
+    # Keyboard Express Keys
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
         ctrl = event.modifiers() & Qt.KeyboardModifier.ControlModifier
@@ -559,7 +611,7 @@ class MainWindow(QWidget):
             self.export_board_dialog(); return
 
         if key == Qt.Key.Key_Tab:
-            self.pill_switch.toggle_mode()
+            self.title_bar.toggle_mode()
         elif key == Qt.Key.Key_Space:
             self.session_engine.toggle_pause()
         elif key in (Qt.Key.Key_Right, Qt.Key.Key_D):
@@ -575,7 +627,7 @@ class MainWindow(QWidget):
         elif key == Qt.Key.Key_T:
             self.floating_dock.btn_pin.click()
         elif key == Qt.Key.Key_F:
-            if self.pill_switch.current_mode == 'canvas':
+            if self.title_bar.active_mode == 'canvas':
                 self.canvas_view.fit_all_items()
             else:
                 self.action_view.zoom_factor = 1.0
@@ -588,9 +640,6 @@ class MainWindow(QWidget):
         else:
             super().keyPressEvent(event)
 
-    # ---------------------------------------------------------------
-    # Paint: outer rounded border frame
-    # ---------------------------------------------------------------
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -598,4 +647,4 @@ class MainWindow(QWidget):
         rect = self.rect().adjusted(1, 1, -1, -1)
         painter.setBrush(QBrush(QColor(theme.bg_dark)))
         painter.setPen(QPen(QColor(theme.border), 1.5))
-        painter.drawRoundedRect(QRectF(rect), 12, 12)
+        painter.drawRoundedRect(QRectF(rect), 10, 10)

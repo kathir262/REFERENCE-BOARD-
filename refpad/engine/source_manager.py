@@ -30,6 +30,8 @@ class SourceManager:
         for file in p.glob(pattern):
             if not file.is_file():
                 continue
+            if file.name.startswith(('~', '.')):
+                continue
             ext = file.suffix.lower()
             if ext in SUPPORTED_IMAGE_EXTENSIONS:
                 loaded.append(RefItem(
@@ -55,7 +57,7 @@ class SourceManager:
         if shuffle:
             random.shuffle(loaded)
         else:
-            loaded.sort(key=lambda x: x.name.lower())
+            loaded.sort(key=lambda x: (x.file_path.lower(), x.page_num, x.name.lower()))
 
         self.items = loaded
         self.current_source_description = f"Folder: {p.name} ({len(loaded)} images)"

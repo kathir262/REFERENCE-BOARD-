@@ -1,7 +1,8 @@
 """
 BeeRef Infinite Canvas View (Full-Featured).
 Supports clipboard paste (Ctrl+V), text notes, packing, alignment,
-normalization, eyedropper color picker, and high-res export.
+normalization, eyedropper color picker, high-res export, and PDF page tiling.
+Zero hardcoded purple — 100% theme-aware.
 """
 from typing import List, Optional, Tuple
 import math
@@ -23,7 +24,7 @@ class CanvasView(QGraphicsView):
     files_dropped = Signal(list)
     start_session_with_item = Signal(object)
     user_activity_detected = Signal()
-    color_sampled = Signal(str)  # HEX color string
+    color_sampled = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -72,6 +73,32 @@ class CanvasView(QGraphicsView):
 
         if points:
             painter.drawPoints(points)
+
+        # If canvas is empty, draw clear guide card in the center
+        items = [it for it in self.scene.items() if isinstance(it, (CanvasRefItem, CanvasTextItem))]
+        if not items:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            center = self.mapToScene(self.viewport().rect().center())
+            cw, ch = 380, 160
+            card = QRectF(center.x() - cw / 2, center.y() - ch / 2, cw, ch)
+            painter.setBrush(QBrush(QColor(theme.bg_card)))
+            painter.setPen(QPen(QColor(theme.border), 1.2))
+            painter.drawRoundedRect(card, 12, 12)
+
+            painter.setPen(QColor(theme.text_primary))
+            painter.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
+            painter.drawText(QRectF(card.left(), card.top() + 16, cw, 28), Qt.AlignmentFlag.AlignCenter, "🖼 BeeRef Board Mode")
+
+            painter.setPen(QColor(theme.text_muted))
+            painter.setFont(QFont("Segoe UI", 10))
+            painter.drawText(QRectF(card.left() + 20, card.top() + 50, cw - 40, 42), Qt.AlignmentFlag.AlignCenter,
+                             "Drop reference images or PDF books here\nor paste directly from clipboard (Ctrl+V)")
+
+            painter.setPen(QColor(theme.accent))
+            painter.setFont(QFont("Segoe UI", 9, QFont.Weight.DemiBold))
+            painter.drawText(QRectF(card.left(), card.top() + 106, cw, 22), Qt.AlignmentFlag.AlignCenter,
+                             "Middle-Click / Space+Drag: Pan  •  Scroll: Zoom  •  Tab: Practice")
+
         painter.restore()
 
     def add_ref_items(self, items: List[RefItem], auto_tile: bool = True):
@@ -84,7 +111,6 @@ class CanvasView(QGraphicsView):
         if auto_tile and canvas_items:
             self.auto_arrange_items(canvas_items)
 
-    # 1. Clipboard Paste (Ctrl+V) & Copy (Ctrl+C)
     def paste_from_clipboard(self):
         """Paste image or text from clipboard onto canvas."""
         clipboard = QApplication.clipboard()
@@ -96,11 +122,9 @@ class CanvasView(QGraphicsView):
                 pix = QPixmap.fromImage(img)
                 ref = RefItem(source_type='clipboard', in_memory_pixmap=pix, name=f"Pasted Image ({pix.width()}x{pix.height()})")
                 c_item = CanvasRefItem(ref)
-                # Place at center of current view
                 view_center = self.mapToScene(self.viewport().rect().center())
                 c_item.setPos(view_center.x() - pix.width() / 2, view_center.y() - pix.height() / 2)
                 self.scene.addItem(c_item)
-                # Select only this item
                 self.scene.clearSelection()
                 c_item.setSelected(True)
                 return True
@@ -118,7 +142,6 @@ class CanvasView(QGraphicsView):
             if pix and not pix.isNull():
                 QApplication.clipboard().setPixmap(pix)
 
-    # 2. Sticky Notes
     def add_text_note(self, text: str = "Note..."):
         view_center = self.mapToScene(self.viewport().rect().center())
         note = CanvasTextItem(text)
@@ -128,7 +151,6 @@ class CanvasView(QGraphicsView):
         note.setSelected(True)
         note.setFocus()
 
-    # 3. BeeRef Layout Operations: Pack & Align
     def auto_arrange_items(self, items: Optional[List[CanvasRefItem]] = None):
         """Pack items into a neat grid."""
         if items is None:
@@ -156,7 +178,6 @@ class CanvasView(QGraphicsView):
         self.fit_all_items()
 
     def align_selected(self, mode: str):
-        """Align selected items: 'left', 'right', 'top', 'bottom', 'center_h', 'center_v'."""
         selected = [it for it in self.scene.selectedItems() if isinstance(it, CanvasRefItem)]
         if len(selected) < 2:
             return
@@ -180,7 +201,6 @@ class CanvasView(QGraphicsView):
             for it, pos, br in rects:
                 it.setPos(pos.x(), max_b - br.height())
         elif mode == 'center_h':
-            # Horizontal line
             spacing = 30
             sorted_by_x = sorted(rects, key=lambda r: r[1].x())
             start_x = sorted_by_x[0][1].x()
@@ -189,7 +209,6 @@ class CanvasView(QGraphicsView):
                 it.setPos(start_x, curr_y)
                 start_x += br.width() + spacing
         elif mode == 'center_v':
-            # Vertical column
             spacing = 30
             sorted_by_y = sorted(rects, key=lambda r: r[1].y())
             curr_x = sorted_by_y[0][1].x()
@@ -199,22 +218,18 @@ class CanvasView(QGraphicsView):
                 start_y += br.height() + spacing
 
     def normalize_selected(self, dimension: str = 'height'):
-        """Make all selected items the exact same height or width."""
         selected = [it for it in self.scene.selectedItems() if isinstance(it, CanvasRefItem)]
         if len(selected) < 2:
             return
 
         target_val = selected[0].boundingRect().height() if dimension == 'height' else selected[0].boundingRect().width()
-
         for it in selected[1:]:
             cur_val = it.boundingRect().height() if dimension == 'height' else it.boundingRect().width()
             if cur_val > 0:
                 s = target_val / cur_val
                 it.setScale(s)
 
-    # 4. Eyedropper / Color Picker
     def sample_color_at(self, scene_pos: QPointF) -> Optional[str]:
-        """Sample pixel color from reference item under cursor."""
         item = self.scene.itemAt(scene_pos, self.transform())
         if isinstance(item, CanvasRefItem) and item.pixmap:
             local_pos = item.mapFromScene(scene_pos)
@@ -229,9 +244,7 @@ class CanvasView(QGraphicsView):
                 return hex_str
         return None
 
-    # 5. Export Entire Canvas Image
     def export_canvas_image(self, file_path: str) -> bool:
-        """Render whole canvas bounding box to crisp image."""
         rect = self.scene.itemsBoundingRect().adjusted(-20, -20, 20, 20)
         if rect.isEmpty():
             return False
@@ -253,7 +266,6 @@ class CanvasView(QGraphicsView):
         if not items_rect.isNull() and items_rect.width() > 0:
             self.fitInView(items_rect.adjusted(-60, -60, 60, 60), Qt.AspectRatioMode.KeepAspectRatio)
 
-    # Touch & Stylus
     def event(self, event: QEvent) -> bool:
         if event.type() in (QEvent.Type.TouchBegin, QEvent.Type.TouchUpdate, QEvent.Type.TouchEnd):
             touch_event: QTouchEvent = event
@@ -308,7 +320,6 @@ class CanvasView(QGraphicsView):
 
     def mousePressEvent(self, event: QMouseEvent):
         self.user_activity_detected.emit()
-        # Alt+Click is eyedropper color sampler
         if event.modifiers() & Qt.KeyboardModifier.AltModifier and event.button() == Qt.MouseButton.LeftButton:
             scene_pos = self.mapToScene(event.pos())
             hex_col = self.sample_color_at(scene_pos)
@@ -316,7 +327,6 @@ class CanvasView(QGraphicsView):
                 event.accept()
                 return
 
-        # Middle click or Space+Left click pan
         if event.button() == Qt.MouseButton.MiddleButton or (event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.SpaceModifier):
             self.is_panning = True
             self.pan_start_pos = event.position()
@@ -357,17 +367,14 @@ class CanvasView(QGraphicsView):
         key = event.key()
         ctrl = event.modifiers() & Qt.KeyboardModifier.ControlModifier
 
-        # Ctrl+V paste
         if ctrl and key == Qt.Key.Key_V:
             if self.paste_from_clipboard():
                 event.accept()
                 return
-        # Ctrl+C copy
         elif ctrl and key == Qt.Key.Key_C:
             self.copy_selected_to_clipboard()
             event.accept()
             return
-        # Ctrl+N sticky note
         elif ctrl and key == Qt.Key.Key_N:
             self.add_text_note()
             event.accept()

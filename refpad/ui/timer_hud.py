@@ -125,11 +125,11 @@ class TimerHUD(QWidget):
         else:
             badge_text = f"{self.duration_seconds}s POSE"
 
-        badge_rect = QRectF(10, 86, self.width() - 20, 17)
-        painter.setBrush(QBrush(QColor(theme.accent + "22")))
-        painter.setPen(QPen(QColor(theme.border), 0.8))
+        badge_rect = QRectF(10, 86, self.width() - 20, 18)
+        painter.setBrush(QBrush(QColor(theme.bg_card)))
+        painter.setPen(QPen(QColor(theme.border), 1.0))
         painter.drawRoundedRect(badge_rect, 5, 5)
-        painter.setPen(QColor(theme.accent))
+        painter.setPen(QColor(theme.text_primary))
         painter.setFont(QFont("Segoe UI", 8, QFont.Weight.DemiBold))
         painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, badge_text)
 
