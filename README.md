@@ -143,6 +143,19 @@ Reference Board bridges the gap between passive reference organization and activ
 
 ---
 
+## One-Click Download & Launch (No Python Needed)
+
+### Option 1: Direct Single-File Executable (.exe)
+1. Download **[ReferenceBoard.exe](https://github.com/kathir262/REFERENCE-BOARD-/releases/download/v1.0.0/ReferenceBoard.exe)** (96.2 MB) from the [v1.0.0 Releases](https://github.com/kathir262/REFERENCE-BOARD-/releases/tag/v1.0.0).
+2. Double-click `ReferenceBoard.exe` to run immediately. No installation or folder extraction required.
+
+### Option 2: One-Click Desktop Installer
+1. Clone or download this repository.
+2. Double-click `install.bat`.
+3. It will install Reference Board to `%LocalAppData%\Programs\ReferenceBoard`, create a Desktop icon and Start Menu shortcut, and launch the application automatically.
+
+---
+
 ## Installation & Running from Source
 
 ### Prerequisites
@@ -173,14 +186,14 @@ python run.py "C:\Path\To\AnatomyBook.pdf"
 
 ## Building the Windows Executable (.exe)
 
-To build a standalone executable that runs without requiring Python installed:
+To build a standalone single-file executable that runs without requiring Python installed:
 
 ```bash
-# Build standalone executable with PyInstaller
-pyinstaller --noconfirm --onedir --windowed --name "ReferenceBoard" --add-data "refpad;refpad" run.py
+# Build standalone single-file executable with PyInstaller
+pyinstaller --noconfirm --onefile --windowed --name "ReferenceBoard" --add-data "refpad;refpad" run.py
 ```
 
-The output executable will be created in `dist/ReferenceBoard/ReferenceBoard.exe`.
+The output standalone executable will be created at `dist/ReferenceBoard.exe`.
 
 ---
 
