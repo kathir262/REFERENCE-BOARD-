@@ -1,9 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_dark">#121418</color>
-    <color name="card_bg">#1A1C23</color>
-    <color name="accent_purple">#7E57F6</color>
-    <color name="accent_purple_variant">#906BF9</color>
-    <color name="text_primary">#F0F3F6</color>
-    <color name="text_secondary">#8B949E</color>
-    <color name="overlay_border">#33FFFFFF</color>
+    <!-- Studio Dark Monochrome Palette -->
+    <color name="bg_dark">#121214</color>
+    <color name="card_bg">#18181b</color>
+    <color name="card_bg_hover">#27272a</color>
+    <color name="border_subtle">#3f3f46</color>
+
+    <!-- Studio Yellow Accents (Matches Desktop Reference Board) -->
+    <color name="accent_yellow">#facc15</color>
+    <color name="accent_yellow_hover">#eab308</color>
+    <color name="border_selected">#facc15</color>
+
+    <!-- Typography -->
+    <color name="text_primary">#f4f4f5</color>
+    <color name="text_secondary">#a1a1aa</color>
+    <color name="text_dark">#09090b</color>
+    <color name="text_danger">#ef4444</color>
+
+    <!-- Overlays -->
+    <color name="overlay_window_bg">#F2121214</color>
+    <color name="hud_bg">#D918181B</color>
 </resources>

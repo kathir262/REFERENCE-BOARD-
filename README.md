@@ -1,8 +1,22 @@
 # Reference Board (RefPad)
 
-Desktop companion application fusing **BeeRef** (infinite reference moodboard with image transforms, arrangement, and context menus) and **Line of Action** (timed gesture and figure drawing practice engine with circular countdown HUD).
+Cross-platform companion application fusing **BeeRef** (infinite reference moodboard with image transforms, arrangement, and context menus) and **Line of Action** (timed gesture and figure drawing practice engine with circular countdown HUD).
 
-Designed specifically for digital painters (Clip Studio Paint, Photoshop, Krita, Blender) and traditional sketchers who need a high-performance, distraction-free floating desktop reference tool.
+Available for **Windows Desktop** (standalone `.exe`) and **Android Mobile & Tablets** (floating overlay `.apk` for Clip Studio Paint, HiPaint, Infinite Painter, and ibis Paint X).
+
+---
+
+## One-Click Downloads
+
+### Desktop (Windows 10 / 11 64-bit)
+- **Direct Standalone Executable**: **[ReferenceBoard.exe (95.9 MB)](https://github.com/kathir262/REFERENCE-BOARD-/releases/download/v1.0.0/ReferenceBoard.exe)**
+  - No Python, DLLs, or installation required. Just download and double-click to launch.
+- **Portable ZIP Archive**: **[ReferenceBoard-Windows-x64.zip (96.5 MB)](https://github.com/kathir262/REFERENCE-BOARD-/releases/download/v1.0.0/ReferenceBoard-Windows-x64.zip)**
+
+### Mobile & Tablets (Android 7.0+)
+- **Direct Standalone APK**: **[ReferenceBoard.apk (2.38 MB)](https://github.com/kathir262/REFERENCE-BOARD-/releases/download/v1.0.0/ReferenceBoard.apk)**
+  - Direct download and install for Android phones and drawing tablets (Samsung Galaxy Tab, Xiaomi Pad, Pixel Tablet).
+  - Floats directly over full-screen drawing applications.
 
 ---
 
@@ -14,48 +28,44 @@ Reference Board bridges the gap between passive reference organization and activ
    - Infinite 2D zoomable and pannable canvas.
    - 1-to-1 BeeRef image operations: horizontal/vertical flips, 90-degree rotations, grayscale value study, color inversion, opacity slider, crop, and Z-order layering.
    - Optimal automatic packing and alignment algorithms.
-   - Vibrant studio yellow highlight border on selected references.
+   - Vibrant studio yellow highlight border (`#facc15`) on selected references with anchor handles and floating badge.
    - Dual context menus: focused image menu on right-clicking references, and complete BeeRef system menu on the floating dock.
 
 2. **Practice Mode (Line of Action Architecture)**:
-   - Timed gesture drawing sessions with a circular countdown ring HUD.
-   - Configurable pose durations: 30s, 45s, 1m, 2m, 3m, 5m, 10m, and warm-up ladders (30s -> 1m -> 5m).
-   - Clean keyboard controls: pause, skip, restart, flip, grayscale, and audio chimes on pose transitions.
+   - Timed gesture drawing sessions with countdown timer HUD.
+   - Configurable pose durations: 30s, 45s, 1m, 2m, 3m, 5m, 10m, and warm-up ladders.
+   - Clean controls: pause, skip, restart, flip, grayscale, and pose chimes.
 
 3. **Strict Mode Separation**:
    - Reference Board and Practice Mode operate independently.
-   - Smart Import Destination selector lets you route incoming references (PDFs, images, folders) to the Reference Board, Practice Mode, or both.
+   - Smart Import Destination selector routes incoming references (PDFs, images, folders) to Reference Board, Practice Mode, or both.
 
-4. **Zero Purple Theme Engine**:
-   - Pure Black & White (Monochrome) default theme for maximum visual contrast without distracting color casts.
-   - Available themes: Black & White, Rose Blossom, Studio Amber, Deep Cobalt, Paper White.
-
----
-
-## Key Features
-
-- **High-DPI PDF & Folder Ingestion**:
-  - Open multi-page art and anatomy PDF books directly (powered by PyMuPDF).
-  - Drag and drop folders; nested image files and PDF documents are extracted automatically.
-  - Paste images directly from the clipboard (`Ctrl+V`).
-
-- **Floating Frameless Window**:
-  - Borderless glass window with draggable top header and flexible multi-edge resizing.
-  - Pin Always-On-Top (`T`) to float above full-screen drawing software.
-  - Auto-dimming glass dock that wakes on mouse movement.
-
-- **Direct Image Context Menu (Green Circle)**:
-  - Right-clicking any image provides instant access to direct transforms: Flip H/V, Rotate 90 CW/CCW, Grayscale, Invert, Opacity, Reset Transforms, Copy, Cut, Delete, Layering.
-
-- **Full System Menu (Red Circle)**:
-  - Clicking the menu button on the floating dock opens full BeeRef system submenus: File, Edit, View, Insert, Transform, Normalize, Arrange, Images, Practice Mode, Themes, Help.
-
-- **Yellow Selection Highlighting**:
-  - Selected reference images feature a high-contrast 3px studio yellow border with corner grip handles and floating name badge.
+4. **Zero Purple Studio Dark Theme**:
+   - Pure Monochrome and Dark Studio palette for zero color distortion while painting.
+   - Studio Yellow accents matching studio grade monitor standards.
 
 ---
 
-## Keyboard and Mouse Shortcuts
+## Mobile & Tablet (Android) Companion
+
+The Android version is built specifically for digital illustrators and comic artists:
+
+- **Floating Overlay over Drawing Apps**:
+  - Uses Android Picture-in-Picture / overlay window capabilities to float directly above Clip Studio Paint, HiPaint, Infinite Painter, ibis Paint X, and Sketchbook.
+  - Freely draggable from the header and resizable from the bottom-right corner.
+  - Minimize button collapses the window into an unobtrusive floating bubble while working on canvas.
+- **Multi-Touch & Stylus Engine**:
+  - 2-finger pinch-to-zoom and 2-finger pan.
+  - 1-finger select and reposition individual reference tiles.
+  - Hardware stylus (S-Pen / Wacom) detection with palm rejection. S-Pen primary button toggles play/pause or selection.
+- **Native PDF Reference Ingestion**:
+  - High-resolution hardware rendering of multi-page anatomy books and sketchbooks directly from device storage.
+- **Quick Interval Presets**:
+  - One-tap interval selector (30s, 1m, 2m, 5m) with automatic pose progression.
+
+---
+
+## Keyboard and Mouse Shortcuts (Desktop)
 
 ### Navigation & Canvas
 | Shortcut | Action |
@@ -114,7 +124,19 @@ Reference Board bridges the gap between passive reference organization and activ
 ## Project Structure
 
 ```text
-├── refpad/
+├── android/                    # Android Native Mobile & Tablet Application
+│   ├── app/
+│   │   ├── src/main/java/com/refpad/app/
+│   │   │   ├── MainActivity.kt           # SAF file pickers and permissions
+│   │   │   ├── FloatingOverlayService.kt # Floating overlay window manager
+│   │   │   ├── RefCanvasView.kt          # Touch & stylus reference canvas
+│   │   │   ├── RefBoardItem.kt           # Yellow highlighted reference model
+│   │   │   ├── PdfHelper.kt              # Native PDF hardware page renderer
+│   │   │   └── DataManager.kt            # Shared reference & practice state
+│   │   └── src/main/res/                 # Zero purple dark studio UI layouts
+│   ├── build.gradle
+│   └── settings.gradle
+├── refpad/                     # Python Desktop Engine
 │   ├── engine/
 │   │   ├── audio.py            # Synthesized audio feedback cues
 │   │   ├── session_engine.py   # Practice session countdown state machine
@@ -143,60 +165,23 @@ Reference Board bridges the gap between passive reference organization and activ
 
 ---
 
-## One-Click Download & Launch (No Python Needed)
+## Building from Source
 
-### Option 1: Direct Single-File Executable (.exe)
-1. Download **[ReferenceBoard.exe](https://github.com/kathir262/REFERENCE-BOARD-/releases/download/v1.0.0/ReferenceBoard.exe)** (96.2 MB) from the [v1.0.0 Releases](https://github.com/kathir262/REFERENCE-BOARD-/releases/tag/v1.0.0).
-2. Double-click `ReferenceBoard.exe` to run immediately. No installation or folder extraction required.
-
-### Option 2: One-Click Desktop Installer
-1. Clone or download this repository.
-2. Double-click `install.bat`.
-3. It will install Reference Board to `%LocalAppData%\Programs\ReferenceBoard`, create a Desktop icon and Start Menu shortcut, and launch the application automatically.
-
----
-
-## Installation & Running from Source
-
-### Prerequisites
-- Python 3.10, 3.11, or 3.12 (64-bit recommended)
-- Windows 10 / 11
-
-### Setup
+### Windows Desktop Executable
 ```bash
-# Clone the repository
-git clone https://github.com/kathir262/REFERENCE-BOARD-.git
-cd REFERENCE-BOARD-
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run application
-python run.py
+pyinstaller --noconfirm --onefile --windowed --name "ReferenceBoard" --add-data "refpad;refpad" --exclude-module "pymupdf.layout" run.py
 ```
+Output: `dist/ReferenceBoard.exe`
 
-### CLI Launch with Arguments
-You can open a folder of reference images or a PDF art book directly:
+### Android Mobile APK
 ```bash
-python run.py "C:\Path\To\ReferenceFolder"
-python run.py "C:\Path\To\AnatomyBook.pdf"
+cd android
+./gradlew assembleRelease
 ```
-
----
-
-## Building the Windows Executable (.exe)
-
-To build a standalone single-file executable that runs without requiring Python installed:
-
-```bash
-# Build standalone single-file executable with PyInstaller
-pyinstaller --noconfirm --onefile --windowed --name "ReferenceBoard" --add-data "refpad;refpad" run.py
-```
-
-The output standalone executable will be created at `dist/ReferenceBoard.exe`.
+Output: `android/app/build/outputs/apk/release/ReferenceBoard-release.apk` (and `dist/ReferenceBoard.apk`)
 
 ---
 
 ## License
 
-MIT License. Designed and built as a clean, open reference desktop companion for digital artists.
+MIT License. Designed and built as a clean, open reference companion for digital artists.

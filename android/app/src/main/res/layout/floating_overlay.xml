@@ -1,84 +1,106 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/overlay_root"
-    android:layout_width="320dp"
-    android:layout_height="400dp"
-    android:background="@drawable/overlay_background">
+    android:layout_width="360dp"
+    android:layout_height="460dp">
 
+    <!-- Expanded Window Container -->
     <LinearLayout
+        android:id="@+id/window_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="@drawable/overlay_background"
         android:orientation="vertical">
 
-        <!-- Top Drag Header -->
+        <!-- Draggable Top Header -->
         <LinearLayout
             android:id="@+id/header_bar"
             android:layout_width="match_parent"
-            android:layout_height="40dp"
+            android:layout_height="38dp"
+            android:background="#2018181B"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:background="#281A1C23">
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp">
 
             <TextView
                 android:id="@+id/tv_header_title"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="RefPad"
-                android:textColor="#F0F3F6"
+                android:text="Reference Board"
+                android:textColor="@color/accent_yellow"
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
             <Button
                 android:id="@+id/btn_mode_toggle"
                 android:layout_width="wrap_content"
-                android:layout_height="28dp"
-                android:text="Tab"
-                android:textSize="10sp"
-                android:textColor="#FFFFFF" />
+                android:layout_height="26dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/btn_action_bg"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:text="Ref Board"
+                android:textColor="@color/text_primary"
+                android:textSize="10sp" />
+
+            <Button
+                android:id="@+id/btn_minimize"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/btn_action_bg"
+                android:text="—"
+                android:textColor="@color/text_primary"
+                android:textSize="11sp" />
 
             <Button
                 android:id="@+id/btn_close"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
-                android:text="✕"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:background="@drawable/btn_action_bg"
+                android:text="X"
+                android:textColor="@color/text_danger"
                 android:textSize="11sp"
-                android:textColor="#FF7B72" />
+                android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- Pose Display / Canvas Area -->
+        <!-- Main Content Area: Reference Canvas & Practice HUD -->
         <FrameLayout
-            android:id="@+id/canvas_container"
+            android:id="@+id/content_area"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1">
 
-            <ImageView
-                android:id="@+id/iv_pose"
+            <!-- Interactive RefPad Canvas View -->
+            <com.refpad.app.RefCanvasView
+                android:id="@+id/ref_canvas"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:scaleType="fitCenter" />
+                android:layout_height="match_parent" />
 
-            <!-- Circular Timer HUD Card -->
+            <!-- Practice HUD Overlay Card -->
             <LinearLayout
                 android:id="@+id/hud_card"
-                android:layout_width="100dp"
-                android:layout_height="110dp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:layout_gravity="top|start"
-                android:layout_margin="12dp"
-                android:background="#D0181A20"
+                android:layout_margin="10dp"
+                android:background="@drawable/hud_background"
                 android:gravity="center"
                 android:orientation="vertical"
-                android:padding="6dp">
+                android:paddingStart="12dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="6dp"
+                android:visibility="gone">
 
                 <TextView
                     android:id="@+id/tv_countdown"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="1:48"
-                    android:textColor="#FFFFFF"
+                    android:text="02:00"
+                    android:textColor="@color/accent_yellow"
                     android:textSize="18sp"
                     android:textStyle="bold" />
 
@@ -86,9 +108,9 @@
                     android:id="@+id/tv_badge"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
+                    android:layout_marginTop="2dp"
                     android:text="2 MIN POSE"
-                    android:textColor="#7E57F6"
+                    android:textColor="@color/text_secondary"
                     android:textSize="9sp"
                     android:textStyle="bold" />
 
@@ -97,66 +119,193 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:text="Pose 3/20"
-                    android:textColor="#8B949E"
+                    android:text="Pose 1/1"
+                    android:textColor="@color/text_secondary"
                     android:textSize="8sp" />
             </LinearLayout>
+
         </FrameLayout>
 
-        <!-- Bottom Controls -->
-        <LinearLayout
-            android:id="@+id/bottom_controls"
+        <!-- Bottom Controls Bar -->
+        <FrameLayout
+            android:id="@+id/bottom_bar"
             android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:gravity="center"
-            android:orientation="horizontal"
-            android:background="#281A1C23"
-            android:padding="4dp">
+            android:layout_height="42dp"
+            android:background="#2018181B"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp">
 
-            <Button
-                android:id="@+id/btn_prev"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:text="⏮"
-                android:textSize="12sp" />
+            <!-- Reference Board Controls -->
+            <LinearLayout
+                android:id="@+id/ref_controls"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:visibility="visible">
 
-            <Button
-                android:id="@+id/btn_play_pause"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:text="⏸ Pause"
-                android:textSize="11sp" />
+                <Button
+                    android:id="@+id/btn_add_ref"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_margin="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_action_bg"
+                    android:text="@string/btn_add"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
 
-            <Button
-                android:id="@+id/btn_next"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:text="⏭"
-                android:textSize="12sp" />
+                <Button
+                    android:id="@+id/btn_flip_ref"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_margin="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_action_bg"
+                    android:text="@string/btn_flip"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
 
-            <Button
-                android:id="@+id/btn_flip"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:text="⇄"
-                android:textSize="12sp" />
+                <Button
+                    android:id="@+id/btn_bw_ref"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_margin="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_action_bg"
+                    android:text="@string/btn_mono"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
 
-            <Button
-                android:id="@+id/btn_grayscale"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:text="◑"
-                android:textSize="12sp" />
-        </LinearLayout>
+                <Button
+                    android:id="@+id/btn_reset_ref"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_margin="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_action_bg"
+                    android:text="@string/btn_reset"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_del_ref"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_margin="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_action_bg"
+                    android:text="@string/btn_del"
+                    android:textColor="@color/text_danger"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <!-- Practice Mode Controls -->
+            <LinearLayout
+                android:id="@+id/practice_controls"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <Button
+                    android:id="@+id/btn_interval"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_margin="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_action_bg"
+                    android:text="2m"
+                    android:textColor="@color/accent_yellow"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_prev_pose"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_margin="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_action_bg"
+                    android:text="@string/btn_prev"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_play_pause"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_margin="2dp"
+                    android:layout_weight="1.2"
+                    android:background="@drawable/btn_action_bg"
+                    android:text="@string/btn_play"
+                    android:textColor="@color/accent_yellow"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btn_next_pose"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_margin="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_action_bg"
+                    android:text="@string/btn_next"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_flip_practice"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_margin="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_action_bg"
+                    android:text="@string/btn_flip"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_bw_practice"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_margin="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_action_bg"
+                    android:text="@string/btn_mono"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+        </FrameLayout>
 
     </LinearLayout>
 
     <!-- Corner Resize Handle (Bottom Right) -->
     <View
         android:id="@+id/resize_handle"
-        android:layout_width="20dp"
-        android:layout_height="20dp"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
         android:layout_gravity="bottom|end"
-        android:background="#80FFFFFF" />
+        android:background="#20FFFFFF" />
+
+    <!-- Minimized Floating Bubble -->
+    <FrameLayout
+        android:id="@+id/minimized_bubble"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center"
+        android:background="@drawable/minimized_bubble_bg"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="REF"
+            android:textColor="@color/text_dark"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </FrameLayout>
 
 </FrameLayout>

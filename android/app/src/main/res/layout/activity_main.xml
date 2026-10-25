@@ -2,55 +2,79 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#121418"
+    android:background="@color/bg_dark"
     android:gravity="center"
     android:orientation="vertical"
     android:padding="24dp">
 
+    <!-- App Title & Tagline -->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="RefPad"
-        android:textColor="#FFFFFF"
+        android:text="@string/app_name"
+        android:textColor="@color/accent_yellow"
         android:textSize="28sp"
         android:textStyle="bold" />
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="32dp"
+        android:layout_marginTop="6dp"
+        android:text="@string/subtitle_tagline"
+        android:textColor="@color/text_primary"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="28dp"
         android:gravity="center"
-        android:text="Floating Artist Companion for Clip Studio Paint, HiPaint & Infinite Painter"
-        android:textColor="#8B949E"
+        android:text="@string/desc_instruction"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp"
+        android:lineSpacingExtra="3dp" />
+
+    <!-- Action Buttons -->
+    <Button
+        android:id="@+id/btn_launch_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="54dp"
+        android:layout_marginBottom="14dp"
+        android:background="@drawable/btn_yellow_bg"
+        android:text="@string/btn_launch_floating"
+        android:textColor="@color/text_dark"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <Button
+        android:id="@+id/btn_pick_images"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/btn_action_bg"
+        android:text="@string/btn_select_images"
+        android:textColor="@color/text_primary"
+        android:textSize="14sp" />
+
+    <Button
+        android:id="@+id/btn_pick_pdf"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/btn_action_bg"
+        android:text="@string/btn_select_pdf"
+        android:textColor="@color/text_primary"
         android:textSize="14sp" />
 
     <Button
         android:id="@+id/btn_pick_folder"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_marginBottom="12dp"
-        android:background="#1A1C23"
+        android:layout_height="48dp"
+        android:background="@drawable/btn_action_bg"
         android:text="@string/btn_select_folder"
-        android:textColor="#F0F3F6" />
-
-    <Button
-        android:id="@+id/btn_pick_pdf"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_marginBottom="24dp"
-        android:background="#1A1C23"
-        android:text="@string/btn_select_pdf"
-        android:textColor="#F0F3F6" />
-
-    <Button
-        android:id="@+id/btn_launch_overlay"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:background="#7E57F6"
-        android:text="@string/btn_launch_floating"
-        android:textColor="#FFFFFF"
-        android:textSize="15sp"
-        android:textStyle="bold" />
+        android:textColor="@color/text_primary"
+        android:textSize="14sp" />
 
 </LinearLayout>

@@ -1,7 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">RefPad</string>
-    <string name="btn_select_folder">📁 Select Pose Folder</string>
-    <string name="btn_select_pdf">📄 Select Anatomy / Art PDF</string>
-    <string name="btn_launch_floating">🚀 Launch Floating Window Over Drawing App</string>
-    <string name="title_settings">Line of Action Session Settings</string>
+    <string name="app_name">Reference Board</string>
+    <string name="subtitle_tagline">Floating Artist Companion for Mobile and Tablets</string>
+    <string name="desc_instruction">Float references directly over Clip Studio Paint, HiPaint, and Infinite Painter with multi-touch gestures, stylus palm rejection, and practice sessions.</string>
+    <string name="btn_select_images">Import Images</string>
+    <string name="btn_select_pdf">Import PDF</string>
+    <string name="btn_select_folder">Import Folder</string>
+    <string name="btn_launch_floating">Launch Floating Board</string>
+    <string name="btn_close">X</string>
+    <string name="btn_minimize">_</string>
+    <string name="btn_mode_ref">Ref Board</string>
+    <string name="btn_mode_practice">Practice</string>
+    <string name="btn_prev">Prev</string>
+    <string name="btn_next">Next</string>
+    <string name="btn_play">Play</string>
+    <string name="btn_pause">Pause</string>
+    <string name="btn_flip">Flip</string>
+    <string name="btn_mono">B&amp;W</string>
+    <string name="btn_add">+ Add</string>
+    <string name="btn_del">Del</string>
+    <string name="btn_reset">Reset</string>
+    <string name="badge_selected">SELECTED</string>
+    <string name="badge_practice">PRACTICE POSE</string>
 </resources>
