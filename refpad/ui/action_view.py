@@ -175,36 +175,36 @@ class ActionView(QWidget):
 
         if self.current_item:
             item = self.current_item
-            menu.addAction("🔄 Flip Horizontally\tH", lambda: (item.toggle_flip_h(), self.update()))
-            menu.addAction("🔃 Flip Vertically\tV", lambda: (item.toggle_flip_v(), self.update()))
-            menu.addAction("⟳ Rotate 90° CW", lambda: (item.rotate_cw(), self.update()))
-            menu.addAction("⟲ Rotate 90° CCW", lambda: (item.rotate_ccw(), self.update()))
-            menu.addAction("🌓 Grayscale\tG", lambda: (item.toggle_grayscale(), self.update()))
-            menu.addAction("🔆 Invert Colors\tI", lambda: (item.toggle_invert(), self.update()))
-            menu.addAction("↩ Reset Transforms\tR", lambda: (item.reset_transforms(), setattr(self, 'zoom_factor', 1.0), setattr(self, 'pan_offset', QPointF(0, 0)), self.update()))
+            menu.addAction("Flip Horizontally\tH", lambda: (item.toggle_flip_h(), self.update()))
+            menu.addAction("Flip Vertically\tV", lambda: (item.toggle_flip_v(), self.update()))
+            menu.addAction("Rotate 90° CW", lambda: (item.rotate_cw(), self.update()))
+            menu.addAction("Rotate 90° CCW", lambda: (item.rotate_ccw(), self.update()))
+            menu.addAction("Grayscale\tG", lambda: (item.toggle_grayscale(), self.update()))
+            menu.addAction("Invert Colors\tI", lambda: (item.toggle_invert(), self.update()))
+            menu.addAction("Reset Transforms\tR", lambda: (item.reset_transforms(), setattr(self, 'zoom_factor', 1.0), setattr(self, 'pan_offset', QPointF(0, 0)), self.update()))
             menu.addSeparator()
 
-        menu.addAction("🖼 Switch to Reference Board\tTab", lambda: getattr(main_win, 'title_bar', None) and main_win.title_bar.set_mode('canvas'))
+        menu.addAction("Switch to Reference Board\tTab", lambda: getattr(main_win, 'title_bar', None) and main_win.title_bar.set_mode('canvas'))
         menu.addSeparator()
 
         eng = getattr(main_win, 'session_engine', None)
         if eng:
-            menu.addAction("⏯ Play / Pause Timer\tSpace", eng.toggle_pause)
-            menu.addAction("⏭ Next Reference\t→, D", eng.next_pose)
-            menu.addAction("⏮ Previous Reference\t←, A", eng.prev_pose)
-            menu.addAction("🔁 Restart Current Timer\tR", eng.restart_current_pose)
+            menu.addAction("Play / Pause Timer\tSpace", eng.toggle_pause)
+            menu.addAction("Next Reference\t→, D", eng.next_pose)
+            menu.addAction("Previous Reference\t←, A", eng.prev_pose)
+            menu.addAction("Restart Current Timer\tR", eng.restart_current_pose)
             menu.addSeparator()
 
-        menu.addAction("📌 Always On Top\tT", lambda: getattr(main_win, 'toggle_always_on_top', lambda: None)())
-        menu.addAction("📁 Load Reference Files / PDF...", lambda: getattr(main_win, 'open_files_dialog', lambda: None)())
+        menu.addAction("Always On Top\tT", lambda: getattr(main_win, 'toggle_always_on_top', lambda: None)())
+        menu.addAction("Load Reference Files / PDF...", lambda: getattr(main_win, 'open_files_dialog', lambda: None)())
 
-        m_themes = menu.addMenu("🎨 Themes")
+        m_themes = menu.addMenu("Themes")
         style_beeref_menu(m_themes)
         for key, pal in THEMES.items():
             m_themes.addAction(pal.name, lambda k=key: getattr(main_win, 'apply_theme', lambda x: None)(k))
 
         menu.addSeparator()
-        menu.addAction("❓ Help & Shortcuts\tF1", lambda: ShortcutsHelpDialog(main_win).exec())
+        menu.addAction("Help & Shortcuts\tF1", lambda: ShortcutsHelpDialog(main_win).exec())
 
         gpos_point = global_pos if isinstance(global_pos, QPoint) else global_pos.toPoint()
         menu.exec(gpos_point)

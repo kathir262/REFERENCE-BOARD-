@@ -29,7 +29,7 @@ class TestBeeRefSplit(unittest.TestCase):
     def test_dock_menu_red_circle(self):
         dock_menu = BeeRefContextMenu.build_dock_menu(self.win.floating_dock, self.win.canvas_view, self.win)
         dock_titles = [act.text() for act in dock_menu.actions()]
-        expected_dock = ['📁 &File', '✏ &Edit', '👁 &View', '➕ &Insert', '🔀 &Transform', '📏 &Normalize', '📐 &Arrange', '🖼 &Images', '⏱ &Practice Mode', '🎨 &Themes', '❓ &Help']
+        expected_dock = ['&File', '&Edit', '&View', '&Insert', '&Transform', '&Normalize', '&Arrange', '&Images', '&Practice Mode', '&Themes', '&Help']
         for exp in expected_dock:
             self.assertTrue(any(exp in t for t in dock_titles), f"Missing {exp} in dock menu!")
 
@@ -40,7 +40,7 @@ class TestBeeRefSplit(unittest.TestCase):
 
         img_menu = BeeRefContextMenu.build_image_menu(self.win.canvas_view, self.win.canvas_view, self.win, c_item)
         img_titles = [act.text() for act in img_menu.actions()]
-        expected_img = ['🔄 Flip Horizontally', '🔃 Flip Vertically', '⟳ Rotate 90° CW', '⟲ Rotate 90° CCW', '🌓 Grayscale', '🔆 Invert Colors', '💧 Opacity', '↩ Reset Transforms']
+        expected_img = ['Flip Horizontally', 'Flip Vertically', 'Rotate 90° CW', 'Rotate 90° CCW', 'Grayscale', 'Invert Colors', 'Opacity', 'Reset Transforms']
         for exp in expected_img:
             self.assertTrue(any(exp in t for t in img_titles), f"Missing {exp} in image menu!")
 

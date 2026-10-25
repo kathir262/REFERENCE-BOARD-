@@ -94,7 +94,7 @@ class CanvasView(QGraphicsView):
 
             painter.setPen(QColor(theme.text_primary))
             painter.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-            painter.drawText(QRectF(card.left(), card.top() + 18, cw, 28), Qt.AlignmentFlag.AlignCenter, "🖼 Reference Board")
+            painter.drawText(QRectF(card.left(), card.top() + 18, cw, 28), Qt.AlignmentFlag.AlignCenter, "Reference Board")
 
             painter.setPen(QColor(theme.text_muted))
             painter.setFont(QFont("Segoe UI", 10))

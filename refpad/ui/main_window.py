@@ -55,7 +55,7 @@ class TitleBar(QWidget):
         layout.setSpacing(8)
 
         # 1. Left: Drag Grip Handle
-        self.lbl_title = QLabel("⠿ Reference Board")
+        self.lbl_title = QLabel("Reference Board")
         self.lbl_title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         self.lbl_title.setToolTip("Click and drag anywhere on this bar to move the window")
         self.lbl_title.setCursor(Qt.CursorShape.SizeAllCursor)
@@ -69,8 +69,8 @@ class TitleBar(QWidget):
         mode_layout.setContentsMargins(2, 2, 2, 2)
         mode_layout.setSpacing(2)
 
-        self.btn_action = QPushButton("⏱ Practice Mode")
-        self.btn_canvas = QPushButton("🖼 Reference Board")
+        self.btn_action = QPushButton("Practice Mode")
+        self.btn_canvas = QPushButton("Reference Board")
 
         for b in (self.btn_action, self.btn_canvas):
             b.setFixedHeight(28)
@@ -88,21 +88,21 @@ class TitleBar(QWidget):
         layout.addStretch()
 
         # 3. Right: Quick Loaders & Window buttons
-        self.btn_pdf = QPushButton("📄 PDF")
+        self.btn_pdf = QPushButton("PDF")
         self.btn_pdf.setToolTip("Open Art or Anatomy PDF Book")
         self.btn_pdf.setFixedHeight(26)
         self.btn_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_pdf.clicked.connect(self.open_pdf_requested.emit)
         layout.addWidget(self.btn_pdf)
 
-        self.btn_files = QPushButton("🖼 Files")
+        self.btn_files = QPushButton("Files")
         self.btn_files.setToolTip("Open Reference Images or PDF Files (All formats visible)")
         self.btn_files.setFixedHeight(26)
         self.btn_files.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_files.clicked.connect(self.open_files_requested.emit)
         layout.addWidget(self.btn_files)
 
-        self.btn_folder = QPushButton("📁 Folder")
+        self.btn_folder = QPushButton("Folder")
         self.btn_folder.setToolTip("Open Image/PDF Reference Folder")
         self.btn_folder.setFixedHeight(26)
         self.btn_folder.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -119,7 +119,7 @@ class TitleBar(QWidget):
         layout.addWidget(self.btn_min)
 
         # Close
-        self.btn_close = QPushButton("✕")
+        self.btn_close = QPushButton("×")
         self.btn_close.setFixedSize(24, 24)
         self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_close.clicked.connect(self.close_clicked.emit)
