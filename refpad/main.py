@@ -29,9 +29,9 @@ def apply_artist_dark_theme(app: QApplication):
     palette.setColor(QPalette.ColorRole.Button, QColor(28, 31, 38))
     palette.setColor(QPalette.ColorRole.ButtonText, text_color)
     palette.setColor(QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
-    palette.setColor(QPalette.ColorRole.Link, QColor(126, 87, 246))
-    palette.setColor(QPalette.ColorRole.Highlight, QColor(126, 87, 246))
-    palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.white)
+    palette.setColor(QPalette.ColorRole.Link, QColor(255, 255, 255))
+    palette.setColor(QPalette.ColorRole.Highlight, QColor(255, 255, 255))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(0, 0, 0))
     app.setPalette(palette)
 
 def main():
