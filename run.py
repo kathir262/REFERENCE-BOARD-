@@ -2,6 +2,9 @@
 Run RefPad launcher.
 """
 import sys
+# Prevent PyMuPDF layout module from attempting to load unbundled ONNX models in frozen mode
+sys.modules['pymupdf.layout'] = None
+
 from pathlib import Path
 
 # Ensure refpad package is importable

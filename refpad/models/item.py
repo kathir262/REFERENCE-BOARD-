@@ -2,11 +2,15 @@
 Reference Item representation for files and PDF pages.
 Full BeeRef transforms: Flip H/V, 90° Rotations, Crop, Invert, Grayscale, Opacity.
 """
+import sys
 from dataclasses import dataclass
 from typing import Optional, Tuple
 from pathlib import Path
 from PySide6.QtGui import QPixmap, QImage, QColor, QTransform
 from PySide6.QtCore import Qt, QRect
+
+# Prevent PyMuPDF layout module from attempting to load unbundled ONNX models in frozen mode
+sys.modules['pymupdf.layout'] = None
 
 try:
     import pymupdf  # new PyMuPDF recommended import

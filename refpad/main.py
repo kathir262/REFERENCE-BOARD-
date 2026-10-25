@@ -4,6 +4,9 @@ Initializes QApplication, dark palette, handles CLI paths, and presents MainWind
 """
 import sys
 import os
+# Prevent PyMuPDF layout module from attempting to load unbundled ONNX models in frozen mode
+sys.modules['pymupdf.layout'] = None
+
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication

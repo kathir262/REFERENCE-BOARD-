@@ -1,11 +1,15 @@
 """
 Source Ingestion Manager: handles Folder crawling and PDF page extraction.
 """
+import sys
 import os
 import random
 from pathlib import Path
 from typing import List, Optional
 from refpad.models.item import RefItem
+
+# Prevent PyMuPDF layout module from attempting to load unbundled ONNX models in frozen mode
+sys.modules['pymupdf.layout'] = None
 
 try:
     import pymupdf
