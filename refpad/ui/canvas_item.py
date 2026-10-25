@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QGraphicsItem, QGraphicsTextItem, QStyleOptionGraphicsItem, QWidget
 )
 from PySide6.QtGui import (
-    QPainter, QPixmap, QColor, QPen, QBrush, QFont
+    QPainter, QPixmap, QColor, QPen, QBrush, QFont, QPainterPath
 )
 from PySide6.QtCore import Qt, QRectF, QPointF
 
@@ -30,9 +30,22 @@ class CanvasRefItem(QGraphicsItem):
         self.is_hovered: bool = False
 
     def boundingRect(self) -> QRectF:
-        if not self.pixmap or self.pixmap.isNull():
-            return QRectF(0, 0, 200, 200)
-        return QRectF(0, 0, self.pixmap.width(), self.pixmap.height())
+        w = float(self.pixmap.width()) if (self.pixmap and not self.pixmap.isNull()) else 200.0
+        h = float(self.pixmap.height()) if (self.pixmap and not self.pixmap.isNull()) else 200.0
+        return QRectF(-6, -26, w + 12, h + 32)
+
+    def shape(self) -> QPainterPath:
+        w = float(self.pixmap.width()) if (self.pixmap and not self.pixmap.isNull()) else 200.0
+        h = float(self.pixmap.height()) if (self.pixmap and not self.pixmap.isNull()) else 200.0
+        path = QPainterPath()
+        path.addRect(QRectF(-6, -26, w + 12, h + 32))
+        return path
+
+    def itemChange(self, change, value):
+        if change in (QGraphicsItem.GraphicsItemChange.ItemSelectedChange, QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged):
+            self.prepareGeometryChange()
+            self.update()
+        return super().itemChange(change, value)
 
     def update_transformations(self):
         self.prepareGeometryChange()
@@ -83,47 +96,54 @@ class CanvasRefItem(QGraphicsItem):
             self.setZValue(min_z - 1.0)
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: Optional[QWidget] = None):
-        if not self.pixmap or self.pixmap.isNull():
-            return
-
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         painter.setOpacity(self.item_opacity)
 
         theme = get_current_theme()
 
-        # Draw image
-        painter.drawPixmap(0, 0, self.pixmap)
+        img_w = float(self.pixmap.width()) if (self.pixmap and not self.pixmap.isNull()) else 200.0
+        img_h = float(self.pixmap.height()) if (self.pixmap and not self.pixmap.isNull()) else 200.0
+        img_rect = QRectF(0, 0, img_w, img_h)
 
-        rect = self.boundingRect()
+        # Draw image or placeholder
+        if self.pixmap and not self.pixmap.isNull():
+            painter.drawPixmap(0, 0, self.pixmap)
+        else:
+            painter.setBrush(QBrush(QColor(theme.bg_card)))
+            painter.setPen(QPen(QColor(theme.border), 1))
+            painter.drawRect(img_rect)
+
         if self.isSelected():
-            accent_col = QColor(theme.accent)
-            pen = QPen(accent_col, 2.5)
+            # Vibrant Yellow Selection Border
+            yellow_col = QColor("#facc15")
+            pen = QPen(yellow_col, 3.0)
+            pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(rect)
+            painter.drawRect(img_rect)
 
-            # Draw corner grip handles
-            handle_size = 9
-            painter.setBrush(QBrush(accent_col))
-            painter.setPen(QPen(QColor(0, 0, 0, 160), 1))
-            for pt in [rect.topLeft(), rect.topRight(), rect.bottomLeft(), rect.bottomRight()]:
+            # Draw yellow corner grip handles
+            handle_size = 10
+            painter.setBrush(QBrush(yellow_col))
+            painter.setPen(QPen(QColor(0, 0, 0, 200), 1))
+            for pt in [img_rect.topLeft(), img_rect.topRight(), img_rect.bottomLeft(), img_rect.bottomRight()]:
                 painter.drawRect(QRectF(pt.x() - handle_size / 2, pt.y() - handle_size / 2, handle_size, handle_size))
 
-            # Floating name badge
+            # Floating name badge with yellow accent
             badge_w = min(320.0, max(100.0, len(self.ref_item.name) * 7.5 + 16))
             badge_rect = QRectF(0, -22, badge_w, 18)
-            painter.setBrush(QBrush(QColor(theme.bg_card)))
-            painter.setPen(QPen(accent_col, 1))
+            painter.setBrush(QBrush(QColor(18, 18, 20, 230)))
+            painter.setPen(QPen(yellow_col, 1.2))
             painter.drawRoundedRect(badge_rect, 4, 4)
-            painter.setPen(QColor(theme.text_primary))
+            painter.setPen(QColor("#facc15"))
             painter.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
             painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, self.ref_item.name)
 
         elif self.is_hovered:
-            painter.setPen(QPen(QColor(255, 255, 255, 60), 1.2))
+            painter.setPen(QPen(QColor(250, 204, 21, 140), 1.5, Qt.PenStyle.DashLine))
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(rect)
+            painter.drawRect(img_rect)
 
     def hoverEnterEvent(self, event):
         self.is_hovered = True
@@ -136,7 +156,15 @@ class CanvasRefItem(QGraphicsItem):
         super().hoverLeaveEvent(event)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.RightButton:
+        if event.button() == Qt.MouseButton.LeftButton:
+            if not (event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)):
+                if not self.isSelected():
+                    if self.scene():
+                        self.scene().clearSelection()
+                    self.setSelected(True)
+            else:
+                self.setSelected(not self.isSelected())
+        elif event.button() == Qt.MouseButton.RightButton:
             if not self.isSelected():
                 if self.scene():
                     self.scene().clearSelection()
@@ -187,8 +215,8 @@ class CanvasTextItem(QGraphicsTextItem):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.boundingRect()
         painter.setBrush(QBrush(QColor(24, 26, 32, 210)))
-        theme = get_current_theme()
-        pen_col = QColor(theme.accent) if self.isSelected() else QColor(255, 255, 255, 30)
-        painter.setPen(QPen(pen_col, 1.2))
+        pen_col = QColor("#facc15") if self.isSelected() else QColor(255, 255, 255, 30)
+        pen_w = 2.0 if self.isSelected() else 1.2
+        painter.setPen(QPen(pen_col, pen_w))
         painter.drawRoundedRect(rect, 6, 6)
         super().paint(painter, option, widget)

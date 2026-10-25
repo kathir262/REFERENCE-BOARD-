@@ -697,10 +697,18 @@ class CanvasView(QGraphicsView):
             if not item:
                 scene_pos = self.mapToScene(event.position().toPoint())
                 items_here = self.scene.items(scene_pos)
-                if items_here:
-                    item = items_here[0]
+                for it in items_here:
+                    if isinstance(it, (CanvasRefItem, CanvasTextItem)):
+                        item = it
+                        break
             if item and isinstance(item, (CanvasRefItem, CanvasTextItem)):
                 self.setDragMode(QGraphicsView.DragMode.NoDrag)
+                if not (event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)):
+                    if not item.isSelected():
+                        self.scene.clearSelection()
+                        item.setSelected(True)
+                else:
+                    item.setSelected(not item.isSelected())
             else:
                 self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
 

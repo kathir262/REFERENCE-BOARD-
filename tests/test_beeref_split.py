@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 sys.stdout.reconfigure(encoding='utf-8')
 
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QPoint
 from refpad.ui.main_window import MainWindow
 from refpad.ui.beeref_menu import BeeRefContextMenu, ImportDestinationDialog
 from refpad.models.item import RefItem
@@ -72,6 +73,38 @@ class TestBeeRefSplit(unittest.TestCase):
         canvas_titles = [act.text() for act in canvas_menu.actions()]
         self.assertTrue(any("Insert" in t for t in canvas_titles))
         self.assertTrue(any("Add Text Note" in t for t in canvas_titles))
+
+    def test_yellow_border_on_click(self):
+        from PySide6.QtTest import QTest
+        from PySide6.QtGui import QPainter, QPixmap
+        self.win.canvas_view.scene.clear()
+        ref = RefItem(source_type='file', name='yellow_test.png')
+        self.win.canvas_view.add_ref_items([ref])
+        c_item = [it for it in self.win.canvas_view.scene.items() if isinstance(it, CanvasRefItem)][0]
+        c_item.setPos(50, 50)
+        app.processEvents()
+
+        # Click on the item
+        click_pt = self.win.canvas_view.mapFromScene(c_item.sceneBoundingRect().center().toPoint())
+        QTest.mouseClick(self.win.canvas_view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, click_pt)
+        app.processEvents()
+
+        self.assertTrue(c_item.isSelected(), "Clicked image must be selected")
+
+        # Verify yellow pen is used to paint the border
+        pix = QPixmap(300, 300)
+        painter = QPainter(pix)
+        pens_used = []
+        orig_set_pen = painter.setPen
+        def spy_set_pen(pen):
+            pens_used.append(pen)
+            orig_set_pen(pen)
+        painter.setPen = spy_set_pen
+        c_item.paint(painter, None)
+        painter.end()
+
+        yellow_pens = [p for p in pens_used if hasattr(p, 'color') and p.color().name().lower() == '#facc15']
+        self.assertGreaterEqual(len(yellow_pens), 1, "Expected yellow border (#facc15)")
 
 if __name__ == '__main__':
     unittest.main()
