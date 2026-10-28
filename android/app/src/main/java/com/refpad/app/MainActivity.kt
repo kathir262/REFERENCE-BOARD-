@@ -8,9 +8,12 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.CountDownTimer
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.view.View
 import android.widget.Button
+import android.widget.TextView
 import android.widget.Toast
 import java.io.InputStream
 
@@ -21,46 +24,38 @@ class MainActivity : Activity() {
     private val PICK_PDF_REQ_CODE = 3456
     private val PICK_FOLDER_REQ_CODE = 4567
 
+    private lateinit var refCanvas: RefCanvasView
+    private lateinit var emptyStateView: View
+    private lateinit var hudCard: View
+    private lateinit var tvCountdown: TextView
+    private lateinit var tvBadge: TextView
+    private lateinit var tvPoseCounter: TextView
+
+    private lateinit var btnModeToggle: Button
+    private lateinit var dockRefControls: View
+    private lateinit var dockPracticeControls: View
+    private lateinit var btnDockPlayPause: Button
+    private lateinit var btnDockInterval: Button
+
     private var pendingTargetMode = 0 // 0: Reference Board, 1: Practice Mode
+
+    // Practice Countdown State
+    private val intervals = intArrayOf(30, 60, 120, 300)
+    private val intervalLabels = arrayOf("30s", "1m", "2m", "5m")
+    private var currentIntervalIndex = 2 // default 120s (2m)
+    private var durationSeconds = 120
+    private var timeRemainingSeconds = 120
+    private var isPlaying = false
+    private var timer: CountDownTimer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        findViewById<Button>(R.id.btn_launch_overlay).setOnClickListener {
-            checkOverlayPermissionAndLaunch()
-        }
-
-        findViewById<Button>(R.id.btn_pick_images).setOnClickListener {
-            promptDestinationDialog { targetMode ->
-                pendingTargetMode = targetMode
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "image/*"
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                }
-                startActivityForResult(intent, PICK_IMAGES_REQ_CODE)
-            }
-        }
-
-        findViewById<Button>(R.id.btn_pick_pdf).setOnClickListener {
-            promptDestinationDialog { targetMode ->
-                pendingTargetMode = targetMode
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "application/pdf"
-                }
-                startActivityForResult(intent, PICK_PDF_REQ_CODE)
-            }
-        }
-
-        findViewById<Button>(R.id.btn_pick_folder).setOnClickListener {
-            promptDestinationDialog { targetMode ->
-                pendingTargetMode = targetMode
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-                startActivityForResult(intent, PICK_FOLDER_REQ_CODE)
-            }
-        }
+        initViews()
+        setupListeners()
+        setupPracticeHUD()
+        syncWithDataManager()
 
         handleIncomingIntent(intent)
     }
@@ -70,16 +65,257 @@ class MainActivity : Activity() {
         intent?.let { handleIncomingIntent(it) }
     }
 
-    private fun handleIncomingIntent(intent: Intent) {
-        if (intent.getStringExtra("action") == "pick_image") {
-            pendingTargetMode = 0 // Reference board
-            val pickIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "image/*"
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-            }
-            startActivityForResult(pickIntent, PICK_IMAGES_REQ_CODE)
+    private fun initViews() {
+        refCanvas = findViewById(R.id.ref_canvas)
+        emptyStateView = findViewById(R.id.empty_state_view)
+        hudCard = findViewById(R.id.hud_card)
+        tvCountdown = findViewById(R.id.tv_countdown)
+        tvBadge = findViewById(R.id.tv_badge)
+        tvPoseCounter = findViewById(R.id.tv_pose_counter)
+
+        btnModeToggle = findViewById(R.id.btn_mode_toggle)
+        dockRefControls = findViewById(R.id.dock_ref_controls)
+        dockPracticeControls = findViewById(R.id.dock_practice_controls)
+        btnDockPlayPause = findViewById(R.id.btn_dock_play_pause)
+        btnDockInterval = findViewById(R.id.btn_dock_interval)
+
+        refCanvas.onItemsCountChanged = { count ->
+            emptyStateView.visibility = if (count == 0 && refCanvas.practiceItems.isEmpty()) View.VISIBLE else View.GONE
         }
+    }
+
+    private fun setupListeners() {
+        // Top Bar
+        findViewById<Button>(R.id.btn_float_overlay).setOnClickListener {
+            checkOverlayPermissionAndLaunch()
+        }
+
+        findViewById<Button>(R.id.btn_top_menu).setOnClickListener {
+            showMainMenu()
+        }
+
+        btnModeToggle.setOnClickListener {
+            if (refCanvas.currentMode == RefCanvasView.MODE_REFERENCE) {
+                switchToPracticeMode()
+            } else {
+                switchToReferenceMode()
+            }
+        }
+
+        // Empty State Buttons
+        findViewById<Button>(R.id.btn_empty_sample).setOnClickListener {
+            loadSampleReferences()
+        }
+
+        findViewById<Button>(R.id.btn_empty_images).setOnClickListener {
+            openImagePicker(0)
+        }
+
+        findViewById<Button>(R.id.btn_empty_pdf).setOnClickListener {
+            openPdfPicker(0)
+        }
+
+        findViewById<Button>(R.id.btn_empty_folder).setOnClickListener {
+            openFolderPicker(0)
+        }
+
+        // Bottom Dock - Reference Mode
+        findViewById<Button>(R.id.btn_dock_menu).setOnClickListener {
+            showMainMenu()
+        }
+
+        findViewById<Button>(R.id.btn_dock_add).setOnClickListener {
+            promptDestinationDialog { targetMode ->
+                openImagePicker(targetMode)
+            }
+        }
+
+        findViewById<Button>(R.id.btn_dock_flip).setOnClickListener {
+            refCanvas.flipSelected()
+        }
+
+        findViewById<Button>(R.id.btn_dock_bw).setOnClickListener {
+            refCanvas.toggleGrayscaleSelected()
+        }
+
+        findViewById<Button>(R.id.btn_dock_reset).setOnClickListener {
+            refCanvas.resetCanvasTransform()
+        }
+
+        findViewById<Button>(R.id.btn_dock_del).setOnClickListener {
+            refCanvas.deleteSelected()
+        }
+
+        findViewById<Button>(R.id.btn_dock_to_practice).setOnClickListener {
+            switchToPracticeMode()
+        }
+
+        // Bottom Dock - Practice Mode
+        btnDockInterval.setOnClickListener {
+            currentIntervalIndex = (currentIntervalIndex + 1) % intervals.size
+            durationSeconds = intervals[currentIntervalIndex]
+            timeRemainingSeconds = durationSeconds
+            btnDockInterval.text = intervalLabels[currentIntervalIndex]
+            tvBadge.text = "${intervalLabels[currentIntervalIndex].uppercase()} POSE"
+            updateTimerDisplay()
+            if (isPlaying) startTimer(durationSeconds)
+        }
+
+        btnDockPlayPause.setOnClickListener {
+            togglePlayPause()
+        }
+
+        findViewById<Button>(R.id.btn_dock_next).setOnClickListener {
+            refCanvas.nextPracticePose()
+            if (isPlaying) startTimer(durationSeconds)
+        }
+
+        findViewById<Button>(R.id.btn_dock_prev).setOnClickListener {
+            refCanvas.prevPracticePose()
+            if (isPlaying) startTimer(durationSeconds)
+        }
+
+        findViewById<Button>(R.id.btn_dock_flip_p).setOnClickListener {
+            refCanvas.flipPracticePose()
+        }
+
+        findViewById<Button>(R.id.btn_dock_bw_p).setOnClickListener {
+            refCanvas.toggleGrayscalePracticePose()
+        }
+
+        findViewById<Button>(R.id.btn_dock_to_ref).setOnClickListener {
+            switchToReferenceMode()
+        }
+    }
+
+    private fun setupPracticeHUD() {
+        refCanvas.onPoseChanged = { current, total ->
+            tvPoseCounter.text = "Pose $current/$total"
+        }
+    }
+
+    private fun syncWithDataManager() {
+        if (DataManager.referenceImages.isNotEmpty()) {
+            for (bmp in DataManager.referenceImages) {
+                refCanvas.addReferenceItem(bmp)
+            }
+            emptyStateView.visibility = View.GONE
+        }
+        if (DataManager.practiceImages.isNotEmpty()) {
+            refCanvas.setPracticeList(DataManager.practiceImages)
+            emptyStateView.visibility = View.GONE
+        }
+    }
+
+    private fun loadSampleReferences() {
+        val samples = SampleGenerator.createSamplePoses()
+        for (bmp in samples) {
+            refCanvas.addReferenceItem(bmp)
+            DataManager.addReference(bmp)
+        }
+        refCanvas.setPracticeList(samples)
+        DataManager.addPracticeImages(samples)
+        refCanvas.autoArrange()
+        emptyStateView.visibility = View.GONE
+        Toast.makeText(this, "Sample references loaded", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun switchToReferenceMode() {
+        refCanvas.currentMode = RefCanvasView.MODE_REFERENCE
+        btnModeToggle.text = "Ref Board"
+        dockRefControls.visibility = View.VISIBLE
+        dockPracticeControls.visibility = View.GONE
+        hudCard.visibility = View.GONE
+        pauseTimer()
+    }
+
+    private fun switchToPracticeMode() {
+        if (refCanvas.practiceItems.isEmpty() && refCanvas.items.isNotEmpty()) {
+            // Use current board items for practice
+            val bitmaps = refCanvas.items.map { it.bitmap }
+            refCanvas.setPracticeList(bitmaps)
+            DataManager.addPracticeImages(bitmaps)
+        }
+        refCanvas.currentMode = RefCanvasView.MODE_PRACTICE
+        btnModeToggle.text = "Practice"
+        dockRefControls.visibility = View.GONE
+        dockPracticeControls.visibility = View.VISIBLE
+        hudCard.visibility = View.VISIBLE
+        updateTimerDisplay()
+    }
+
+    private fun togglePlayPause() {
+        if (isPlaying) {
+            pauseTimer()
+        } else {
+            playTimer()
+        }
+    }
+
+    private fun playTimer() {
+        isPlaying = true
+        btnDockPlayPause.text = "Pause"
+        startTimer(timeRemainingSeconds)
+    }
+
+    private fun pauseTimer() {
+        isPlaying = false
+        timer?.cancel()
+        btnDockPlayPause.text = "Play"
+    }
+
+    private fun startTimer(seconds: Int) {
+        timer?.cancel()
+        timeRemainingSeconds = seconds
+        timer = object : CountDownTimer((timeRemainingSeconds * 1000).toLong(), 1000) {
+            override fun onTick(millisUntilFinished: Long) {
+                timeRemainingSeconds = (millisUntilFinished / 1000).toInt()
+                updateTimerDisplay()
+            }
+
+            override fun onFinish() {
+                refCanvas.nextPracticePose()
+                timeRemainingSeconds = durationSeconds
+                startTimer(durationSeconds)
+            }
+        }.start()
+    }
+
+    private fun updateTimerDisplay() {
+        val mins = timeRemainingSeconds / 60
+        val secs = timeRemainingSeconds % 60
+        tvCountdown.text = String.format("%02d:%02d", mins, secs)
+    }
+
+    private fun showMainMenu() {
+        val options = arrayOf(
+            "Import Images",
+            "Import PDF Reference",
+            "Import Folder",
+            "Auto Arrange References",
+            "Float Over Drawing App",
+            "Load Sample References",
+            "Clear Canvas"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Reference Board Menu")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> promptDestinationDialog { openImagePicker(it) }
+                    1 -> promptDestinationDialog { openPdfPicker(it) }
+                    2 -> promptDestinationDialog { openFolderPicker(it) }
+                    3 -> refCanvas.autoArrange()
+                    4 -> checkOverlayPermissionAndLaunch()
+                    5 -> loadSampleReferences()
+                    6 -> {
+                        refCanvas.clearAll()
+                        DataManager.referenceImages.clear()
+                        Toast.makeText(this, "Canvas cleared", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun promptDestinationDialog(onChosen: (Int) -> Unit) {
@@ -91,6 +327,37 @@ class MainActivity : Activity() {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun openImagePicker(targetMode: Int) {
+        pendingTargetMode = targetMode
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        startActivityForResult(intent, PICK_IMAGES_REQ_CODE)
+    }
+
+    private fun openPdfPicker(targetMode: Int) {
+        pendingTargetMode = targetMode
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/pdf"
+        }
+        startActivityForResult(intent, PICK_PDF_REQ_CODE)
+    }
+
+    private fun openFolderPicker(targetMode: Int) {
+        pendingTargetMode = targetMode
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        startActivityForResult(intent, PICK_FOLDER_REQ_CODE)
+    }
+
+    private fun handleIncomingIntent(intent: Intent) {
+        if (intent.getStringExtra("action") == "pick_image") {
+            openImagePicker(0)
+        }
     }
 
     private fun checkOverlayPermissionAndLaunch() {
@@ -115,7 +382,6 @@ class MainActivity : Activity() {
         } else {
             startService(intent)
         }
-        // Move app to background so artist immediately sees their drawing app
         moveTaskToBack(true)
     }
 
@@ -216,19 +482,22 @@ class MainActivity : Activity() {
     private fun dispatchBitmaps(bitmaps: List<Bitmap>) {
         if (pendingTargetMode == 0) {
             for (bmp in bitmaps) {
+                refCanvas.addReferenceItem(bmp)
                 DataManager.addReference(bmp)
             }
+            refCanvas.autoArrange()
             Toast.makeText(this, "Added to Reference Board", Toast.LENGTH_SHORT).show()
         } else {
+            refCanvas.setPracticeList(bitmaps)
             DataManager.addPracticeImages(bitmaps)
+            switchToPracticeMode()
             Toast.makeText(this, "Added to Practice Mode", Toast.LENGTH_SHORT).show()
         }
-        checkOverlayPermissionAndLaunch()
+        emptyStateView.visibility = View.GONE
     }
 
     private fun loadBitmapFromUri(uri: Uri): Bitmap? {
         return try {
-            // Downsample if huge to stay within mobile tablet heap limits
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             var input: InputStream? = contentResolver.openInputStream(uri)
             BitmapFactory.decodeStream(input, null, options)
@@ -256,5 +525,10 @@ class MainActivity : Activity() {
             e.printStackTrace()
             null
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        timer?.cancel()
     }
 }

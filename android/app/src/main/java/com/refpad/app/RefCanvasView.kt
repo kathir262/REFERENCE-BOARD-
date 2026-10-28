@@ -45,6 +45,7 @@ class RefCanvasView @JvmOverloads constructor(
     var practiceGrayscale = false
 
     var onPoseChanged: ((index: Int, total: Int) -> Unit)? = null
+    var onItemsCountChanged: ((count: Int) -> Unit)? = null
 
     // Canvas Transforms
     private var canvasScale = 1.0f
@@ -100,6 +101,7 @@ class RefCanvasView @JvmOverloads constructor(
         item.isSelected = true
         selectedItem = item
         items.add(item)
+        onItemsCountChanged?.invoke(items.size)
         invalidate()
     }
 
@@ -129,8 +131,30 @@ class RefCanvasView @JvmOverloads constructor(
         selectedItem?.let {
             items.remove(it)
             selectedItem = items.lastOrNull()?.also { last -> last.isSelected = true }
+            onItemsCountChanged?.invoke(items.size)
             invalidate()
         }
+    }
+
+    fun clearAll() {
+        items.clear()
+        selectedItem = null
+        onItemsCountChanged?.invoke(0)
+        invalidate()
+    }
+
+    fun autoArrange() {
+        if (items.isEmpty()) return
+        var curX = 60f
+        val startY = 120f
+        val padding = 50f
+        for (item in items) {
+            item.x = curX
+            item.y = startY
+            curX += item.width + padding
+        }
+        resetCanvasTransform()
+        invalidate()
     }
 
     fun resetCanvasTransform() {
