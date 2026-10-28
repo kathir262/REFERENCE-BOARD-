@@ -45,8 +45,9 @@ class RefCanvasView @JvmOverloads constructor(
 
     var onPoseChanged: ((index: Int, total: Int) -> Unit)? = null
     var onItemsCountChanged: ((count: Int) -> Unit)? = null
-    var onItemLongPressed: ((item: RefBoardItem, screenX: Float, screenY: Float) -> Unit)? = null
-    var onCanvasLongPressed: ((screenX: Float, screenY: Float) -> Unit)? = null
+    var onItemLongPressed: ((item: RefBoardItem, touchX: Float, touchY: Float, canvasX: Float, canvasY: Float) -> Unit)? = null
+    var onCanvasLongPressed: ((touchX: Float, touchY: Float, canvasX: Float, canvasY: Float) -> Unit)? = null
+    var onCanvasTapped: (() -> Unit)? = null
 
     // Canvas Transforms
     private var canvasScale = 1.0f
@@ -106,21 +107,21 @@ class RefCanvasView @JvmOverloads constructor(
                     isDraggingItem = false
                     isPanning = false
                     invalidate()
-                    onItemLongPressed?.invoke(hit, touchX, touchY)
+                    onItemLongPressed?.invoke(hit, touchX, touchY, canvasX, canvasY)
                 } else {
                     isDraggingItem = false
                     isPanning = false
-                    onCanvasLongPressed?.invoke(touchX, touchY)
+                    onCanvasLongPressed?.invoke(touchX, touchY, canvasX, canvasY)
                 }
             } else {
                 isDraggingItem = false
                 isPanning = false
-                onCanvasLongPressed?.invoke(touchX, touchY)
+                onCanvasLongPressed?.invoke(touchX, touchY, canvasX, canvasY)
             }
         }
     })
 
-    fun addReferenceItem(bitmap: Bitmap) {
+    fun addReferenceItem(bitmap: Bitmap, atX: Float? = null, atY: Float? = null) {
         val itemScale = 0.5f
         val itemW = bitmap.width * itemScale
         val itemH = bitmap.height * itemScale
@@ -128,7 +129,10 @@ class RefCanvasView @JvmOverloads constructor(
         val posX: Float
         val posY: Float
 
-        if (items.isEmpty()) {
+        if (atX != null && atY != null) {
+            posX = atX - itemW / 2f
+            posY = atY - itemH / 2f
+        } else if (items.isEmpty()) {
             posX = 60f
             posY = 100f
         } else {
@@ -214,6 +218,18 @@ class RefCanvasView @JvmOverloads constructor(
             onItemsCountChanged?.invoke(items.size)
             invalidate()
         }
+    }
+
+    fun copySelected(): Boolean {
+        val bmp = selectedItem?.bitmap ?: return false
+        DataManager.copiedBitmap = bmp
+        return true
+    }
+
+    fun pasteCopied(atX: Float? = null, atY: Float? = null): Boolean {
+        val bmp = DataManager.copiedBitmap ?: return false
+        addReferenceItem(bmp, atX, atY)
+        return true
     }
 
     fun clearAll() {
@@ -309,6 +325,7 @@ class RefCanvasView @JvmOverloads constructor(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                onCanvasTapped?.invoke()
                 if (currentMode == MODE_REFERENCE) {
                     val hit = items.findLast { it.hitTest(canvasX, canvasY) }
                     if (hit != null) {

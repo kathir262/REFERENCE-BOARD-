@@ -213,17 +213,18 @@ class MainActivity : Activity() {
     }
 
     private fun setupLongPressMenus() {
-        refCanvas.onItemLongPressed = { item, _, _ ->
+        refCanvas.onItemLongPressed = { item, _, _, _, _ ->
             showItemContextMenu(item)
         }
 
-        refCanvas.onCanvasLongPressed = { _, _ ->
+        refCanvas.onCanvasLongPressed = { _, _, _, _ ->
             showCanvasContextMenu()
         }
     }
 
     private fun showItemContextMenu(item: RefBoardItem) {
         val options = arrayOf(
+            "Copy Reference",
             "Flip Horizontal",
             "Rotate 90 CW",
             "Rotate 90 CCW",
@@ -236,18 +237,22 @@ class MainActivity : Activity() {
             .setTitle("Reference Image Operations")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> refCanvas.flipSelected()
-                    1 -> refCanvas.rotateSelectedCW()
-                    2 -> refCanvas.rotateSelectedCCW()
-                    3 -> refCanvas.toggleGrayscaleSelected()
-                    4 -> {
+                    0 -> {
+                        DataManager.copiedBitmap = item.bitmap
+                        Toast.makeText(this, "Reference copied to clipboard", Toast.LENGTH_SHORT).show()
+                    }
+                    1 -> refCanvas.flipSelected()
+                    2 -> refCanvas.rotateSelectedCW()
+                    3 -> refCanvas.rotateSelectedCCW()
+                    4 -> refCanvas.toggleGrayscaleSelected()
+                    5 -> {
                         refCanvas.practiceItems.add(item.bitmap)
                         DataManager.addPracticeImages(listOf(item.bitmap))
                         switchToPracticeMode()
                         Toast.makeText(this, "Added to Practice Mode", Toast.LENGTH_SHORT).show()
                     }
-                    5 -> refCanvas.resetSelectedTransforms()
-                    6 -> refCanvas.deleteSelected()
+                    6 -> refCanvas.resetSelectedTransforms()
+                    7 -> refCanvas.deleteSelected()
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -255,7 +260,9 @@ class MainActivity : Activity() {
     }
 
     private fun showCanvasContextMenu() {
+        val pasteLabel = if (DataManager.copiedBitmap != null) "Paste Reference" else "Paste (No Image Copied)"
         val options = arrayOf(
+            pasteLabel,
             "Import PDF Reference",
             "Import Images",
             "Import Folder",
@@ -269,14 +276,23 @@ class MainActivity : Activity() {
             .setTitle("Reference Board Menu")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> promptDestinationDialog { openPdfPicker(it) }
-                    1 -> promptDestinationDialog { openImagePicker(it) }
-                    2 -> promptDestinationDialog { openFolderPicker(it) }
-                    3 -> loadSampleReferences()
-                    4 -> refCanvas.autoArrange()
-                    5 -> switchToPracticeMode()
-                    6 -> checkOverlayPermissionAndLaunch()
-                    7 -> {
+                    0 -> {
+                        if (DataManager.copiedBitmap != null) {
+                            refCanvas.addReferenceItem(DataManager.copiedBitmap!!)
+                            DataManager.referenceImages.add(DataManager.copiedBitmap!!)
+                            Toast.makeText(this, "Reference pasted", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(this, "Clipboard is empty - copy an image first", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    1 -> promptDestinationDialog { openPdfPicker(it) }
+                    2 -> promptDestinationDialog { openImagePicker(it) }
+                    3 -> promptDestinationDialog { openFolderPicker(it) }
+                    4 -> loadSampleReferences()
+                    5 -> refCanvas.autoArrange()
+                    6 -> switchToPracticeMode()
+                    7 -> checkOverlayPermissionAndLaunch()
+                    8 -> {
                         refCanvas.clearAll()
                         DataManager.referenceImages.clear()
                         Toast.makeText(this, "Canvas cleared", Toast.LENGTH_SHORT).show()

@@ -6,6 +6,8 @@ object DataManager {
     val referenceImages = mutableListOf<Bitmap>()
     val practiceImages = mutableListOf<Bitmap>()
 
+    var copiedBitmap: Bitmap? = null
+
     var onNewReferenceAdded: ((Bitmap) -> Unit)? = null
     var onPracticeImagesUpdated: (() -> Unit)? = null
 

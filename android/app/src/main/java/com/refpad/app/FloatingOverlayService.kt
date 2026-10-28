@@ -1,12 +1,13 @@
 package com.refpad.app
 
-import android.app.AlertDialog
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.CountDownTimer
@@ -18,6 +19,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 
 class FloatingOverlayService : Service() {
 
@@ -28,6 +30,7 @@ class FloatingOverlayService : Service() {
     private lateinit var windowContainer: View
     private lateinit var minimizedBubble: View
     private lateinit var refCanvas: RefCanvasView
+    private lateinit var contentArea: View
     private lateinit var hudCard: View
     private lateinit var tvCountdown: TextView
     private lateinit var tvBadge: TextView
@@ -36,8 +39,30 @@ class FloatingOverlayService : Service() {
     private lateinit var btnModeToggle: Button
     private lateinit var btnPlayPause: Button
     private lateinit var btnInterval: Button
-    private lateinit var refControls: View
-    private lateinit var practiceControls: View
+    private lateinit var dockRefScroll: View
+    private lateinit var dockPracticeScroll: View
+    private lateinit var btnCopyRef: Button
+    private lateinit var btnPasteRef: Button
+
+    // In-Window Compact Menu Views
+    private lateinit var menuCard: View
+    private lateinit var tvMenuTitle: TextView
+    private lateinit var btnMenuClose: View
+    private lateinit var btnMenuCopy: Button
+    private lateinit var btnMenuPaste: Button
+    private lateinit var btnMenuPdf: Button
+    private lateinit var btnMenuImg: Button
+    private lateinit var btnMenuFlip: Button
+    private lateinit var btnMenuRotate: Button
+    private lateinit var btnMenuBw: Button
+    private lateinit var btnMenuPractice: Button
+    private lateinit var btnMenuArrange: Button
+    private lateinit var btnMenuReset: Button
+    private lateinit var btnMenuDel: Button
+    private lateinit var btnMenuClear: Button
+
+    private var lastTouchCanvasX: Float? = null
+    private var lastTouchCanvasY: Float? = null
 
     private var initialX = 0
     private var initialY = 0
@@ -97,6 +122,7 @@ class FloatingOverlayService : Service() {
     private fun initViews() {
         windowContainer = overlayView.findViewById(R.id.window_container)
         minimizedBubble = overlayView.findViewById(R.id.minimized_bubble)
+        contentArea = overlayView.findViewById(R.id.content_area)
         refCanvas = overlayView.findViewById(R.id.ref_canvas)
         hudCard = overlayView.findViewById(R.id.hud_card)
         tvCountdown = overlayView.findViewById(R.id.tv_countdown)
@@ -106,11 +132,34 @@ class FloatingOverlayService : Service() {
         btnModeToggle = overlayView.findViewById(R.id.btn_mode_toggle)
         btnPlayPause = overlayView.findViewById(R.id.btn_play_pause)
         btnInterval = overlayView.findViewById(R.id.btn_interval)
-        refControls = overlayView.findViewById(R.id.ref_controls)
-        practiceControls = overlayView.findViewById(R.id.practice_controls)
+        dockRefScroll = overlayView.findViewById(R.id.dock_ref_scroll)
+        dockPracticeScroll = overlayView.findViewById(R.id.dock_practice_scroll)
+        btnCopyRef = overlayView.findViewById(R.id.btn_copy_ref)
+        btnPasteRef = overlayView.findViewById(R.id.btn_paste_ref)
+
+        // In-Window Menu Views
+        menuCard = overlayView.findViewById(R.id.menu_card)
+        tvMenuTitle = overlayView.findViewById(R.id.tv_menu_title)
+        btnMenuClose = overlayView.findViewById(R.id.btn_menu_close)
+        btnMenuCopy = overlayView.findViewById(R.id.btn_menu_copy)
+        btnMenuPaste = overlayView.findViewById(R.id.btn_menu_paste)
+        btnMenuPdf = overlayView.findViewById(R.id.btn_menu_pdf)
+        btnMenuImg = overlayView.findViewById(R.id.btn_menu_img)
+        btnMenuFlip = overlayView.findViewById(R.id.btn_menu_flip)
+        btnMenuRotate = overlayView.findViewById(R.id.btn_menu_rotate)
+        btnMenuBw = overlayView.findViewById(R.id.btn_menu_bw)
+        btnMenuPractice = overlayView.findViewById(R.id.btn_menu_practice)
+        btnMenuArrange = overlayView.findViewById(R.id.btn_menu_arrange)
+        btnMenuReset = overlayView.findViewById(R.id.btn_menu_reset)
+        btnMenuDel = overlayView.findViewById(R.id.btn_menu_del)
+        btnMenuClear = overlayView.findViewById(R.id.btn_menu_clear)
 
         refCanvas.onPoseChanged = { current, total ->
             tvPoseCounter.text = "Pose $current/$total"
+        }
+
+        refCanvas.onCanvasTapped = {
+            hideMenu()
         }
     }
 
@@ -175,7 +224,7 @@ class FloatingOverlayService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val newW = startW + (event.rawX - initialTouchX).toInt()
                     val newH = startH + (event.rawY - initialTouchY).toInt()
-                    if (newW > 350 && newH > 350) {
+                    if (newW > 320 && newH > 320) {
                         params.width = newW
                         params.height = newH
                         savedWidth = newW
@@ -198,6 +247,19 @@ class FloatingOverlayService : Service() {
             minimizeWindow()
         }
 
+        overlayView.findViewById<View>(R.id.btn_floating_menu).setOnClickListener {
+            if (menuCard.visibility == View.VISIBLE) {
+                hideMenu()
+            } else {
+                val sel = refCanvas.selectedItem
+                if (sel != null) {
+                    showOverlayItemMenu(sel, contentArea.width / 2f, contentArea.height / 2f, sel.x, sel.y)
+                } else {
+                    showOverlayCanvasMenu(contentArea.width / 2f, contentArea.height / 2f)
+                }
+            }
+        }
+
         btnModeToggle.setOnClickListener {
             if (refCanvas.currentMode == RefCanvasView.MODE_REFERENCE) {
                 switchToPracticeMode()
@@ -206,21 +268,21 @@ class FloatingOverlayService : Service() {
             }
         }
 
-        // Reference Mode Toolbar
+        // Reference Mode Bottom Dock
         overlayView.findViewById<View>(R.id.btn_pdf_ref).setOnClickListener {
-            val intent = Intent(this, PickerActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                putExtra("action", "pick_pdf_ref")
-            }
-            startActivity(intent)
+            launchPicker("pick_pdf_ref")
         }
 
         overlayView.findViewById<View>(R.id.btn_add_ref).setOnClickListener {
-            val intent = Intent(this, PickerActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                putExtra("action", "pick_image")
-            }
-            startActivity(intent)
+            launchPicker("pick_image")
+        }
+
+        btnCopyRef.setOnClickListener {
+            copyAction()
+        }
+
+        btnPasteRef.setOnClickListener {
+            pasteAction()
         }
 
         overlayView.findViewById<View>(R.id.btn_flip_ref).setOnClickListener {
@@ -253,11 +315,7 @@ class FloatingOverlayService : Service() {
         }
 
         overlayView.findViewById<View>(R.id.btn_pdf_practice).setOnClickListener {
-            val intent = Intent(this, PickerActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                putExtra("action", "pick_pdf_practice")
-            }
-            startActivity(intent)
+            launchPicker("pick_pdf_practice")
         }
 
         btnPlayPause.setOnClickListener {
@@ -281,113 +339,237 @@ class FloatingOverlayService : Service() {
         overlayView.findViewById<View>(R.id.btn_bw_practice).setOnClickListener {
             refCanvas.toggleGrayscalePracticePose()
         }
+
+        // Menu Card Internal Buttons
+        btnMenuClose.setOnClickListener {
+            hideMenu()
+        }
+
+        btnMenuCopy.setOnClickListener {
+            copyAction()
+        }
+
+        btnMenuPaste.setOnClickListener {
+            pasteAction()
+        }
+
+        btnMenuPdf.setOnClickListener {
+            hideMenu()
+            launchPicker("pick_pdf_ref")
+        }
+
+        btnMenuImg.setOnClickListener {
+            hideMenu()
+            launchPicker("pick_image")
+        }
+
+        btnMenuFlip.setOnClickListener {
+            hideMenu()
+            refCanvas.flipSelected()
+        }
+
+        btnMenuRotate.setOnClickListener {
+            hideMenu()
+            refCanvas.rotateSelectedCW()
+        }
+
+        btnMenuBw.setOnClickListener {
+            hideMenu()
+            refCanvas.toggleGrayscaleSelected()
+        }
+
+        btnMenuPractice.setOnClickListener {
+            hideMenu()
+            refCanvas.selectedItem?.let { sel ->
+                refCanvas.practiceItems.add(sel.bitmap)
+                DataManager.addPracticeImages(listOf(sel.bitmap))
+            }
+            switchToPracticeMode()
+        }
+
+        btnMenuArrange.setOnClickListener {
+            hideMenu()
+            refCanvas.autoArrange()
+        }
+
+        btnMenuReset.setOnClickListener {
+            hideMenu()
+            if (refCanvas.selectedItem != null) {
+                refCanvas.resetSelectedTransforms()
+            } else {
+                refCanvas.resetCanvasTransform()
+            }
+        }
+
+        btnMenuDel.setOnClickListener {
+            hideMenu()
+            refCanvas.deleteSelected()
+        }
+
+        btnMenuClear.setOnClickListener {
+            hideMenu()
+            refCanvas.clearAll()
+            DataManager.referenceImages.clear()
+        }
+    }
+
+    private fun launchPicker(action: String) {
+        val intent = Intent(this, PickerActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            putExtra("action", action)
+        }
+        startActivity(intent)
+    }
+
+    private fun copyAction() {
+        hideMenu()
+        val copied = refCanvas.copySelected()
+        if (copied) {
+            Toast.makeText(this, "Reference copied", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Select a reference first", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun pasteAction() {
+        hideMenu()
+        if (DataManager.copiedBitmap == null) {
+            tryReadSystemClipboardImage()
+        }
+
+        val pasted = refCanvas.pasteCopied(lastTouchCanvasX, lastTouchCanvasY)
+        if (pasted) {
+            DataManager.copiedBitmap?.let { DataManager.referenceImages.add(it) }
+            Toast.makeText(this, "Reference pasted", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Clipboard empty - copy an image first", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun tryReadSystemClipboardImage() {
+        try {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            if (clipboard != null && clipboard.hasPrimaryClip()) {
+                val clip = clipboard.primaryClip
+                if (clip != null && clip.itemCount > 0) {
+                    val uri = clip.getItemAt(0).uri
+                    if (uri != null) {
+                        contentResolver.openInputStream(uri)?.use { stream ->
+                            val bmp = BitmapFactory.decodeStream(stream)
+                            if (bmp != null) {
+                                DataManager.copiedBitmap = bmp
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun setupLongPressMenus() {
-        refCanvas.onItemLongPressed = { item, _, _ ->
-            showOverlayItemDialog(item)
+        refCanvas.onItemLongPressed = { item, touchX, touchY, canvasX, canvasY ->
+            showOverlayItemMenu(item, touchX, touchY, canvasX, canvasY)
         }
 
-        refCanvas.onCanvasLongPressed = { _, _ ->
-            showOverlayCanvasDialog()
+        refCanvas.onCanvasLongPressed = { touchX, touchY, canvasX, canvasY ->
+            showOverlayCanvasMenu(touchX, touchY, canvasX, canvasY)
         }
     }
 
-    private fun showOverlayItemDialog(item: RefBoardItem) {
-        val options = arrayOf(
-            "Flip Horizontal",
-            "Rotate 90 CW",
-            "Rotate 90 CCW",
-            "Toggle Grayscale (B&W)",
-            "Send to Practice Mode",
-            "Reset Transforms",
-            "Delete Reference"
-        )
-        val dialog = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("Reference Operations")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> refCanvas.flipSelected()
-                    1 -> refCanvas.rotateSelectedCW()
-                    2 -> refCanvas.rotateSelectedCCW()
-                    3 -> refCanvas.toggleGrayscaleSelected()
-                    4 -> {
-                        refCanvas.practiceItems.add(item.bitmap)
-                        DataManager.addPracticeImages(listOf(item.bitmap))
-                        switchToPracticeMode()
-                    }
-                    5 -> refCanvas.resetSelectedTransforms()
-                    6 -> refCanvas.deleteSelected()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .create()
+    private fun showOverlayItemMenu(item: RefBoardItem, touchX: Float, touchY: Float, canvasX: Float, canvasY: Float) {
+        lastTouchCanvasX = canvasX
+        lastTouchCanvasY = canvasY
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
-        } else {
-            @Suppress("DEPRECATION")
-            dialog.window?.setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
-        }
-        dialog.show()
+        tvMenuTitle.text = "REFERENCE"
+        btnMenuCopy.visibility = View.VISIBLE
+        btnMenuPaste.visibility = View.GONE
+        btnMenuPdf.visibility = View.GONE
+        btnMenuImg.visibility = View.GONE
+        btnMenuFlip.visibility = View.VISIBLE
+        btnMenuRotate.visibility = View.VISIBLE
+        btnMenuBw.visibility = View.VISIBLE
+        btnMenuPractice.visibility = View.VISIBLE
+        btnMenuPractice.text = "Send to Practice"
+        btnMenuArrange.visibility = View.GONE
+        btnMenuReset.visibility = View.VISIBLE
+        btnMenuReset.text = "Reset Transforms"
+        btnMenuDel.visibility = View.VISIBLE
+        btnMenuClear.visibility = View.GONE
+
+        positionMenu(touchX, touchY)
+        menuCard.visibility = View.VISIBLE
     }
 
-    private fun showOverlayCanvasDialog() {
-        val options = arrayOf(
-            "Import PDF Reference",
-            "Import Image(s)",
-            "Auto Arrange References",
-            "Switch to Practice Mode",
-            "Clear Canvas"
-        )
-        val dialog = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("Reference Board")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        val intent = Intent(this, PickerActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            putExtra("action", "pick_pdf_ref")
-                        }
-                        startActivity(intent)
-                    }
-                    1 -> {
-                        val intent = Intent(this, PickerActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            putExtra("action", "pick_image")
-                        }
-                        startActivity(intent)
-                    }
-                    2 -> refCanvas.autoArrange()
-                    3 -> switchToPracticeMode()
-                    4 -> {
-                        refCanvas.clearAll()
-                        DataManager.referenceImages.clear()
-                    }
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .create()
+    private fun showOverlayCanvasMenu(touchX: Float, touchY: Float, canvasX: Float? = null, canvasY: Float? = null) {
+        lastTouchCanvasX = canvasX
+        lastTouchCanvasY = canvasY
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        tvMenuTitle.text = "REFERENCE BOARD"
+        btnMenuCopy.visibility = View.GONE
+        btnMenuPaste.visibility = View.VISIBLE
+        if (DataManager.copiedBitmap != null) {
+            btnMenuPaste.text = "Paste Reference"
+            btnMenuPaste.alpha = 1.0f
         } else {
-            @Suppress("DEPRECATION")
-            dialog.window?.setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+            btnMenuPaste.text = "Paste (Empty)"
+            btnMenuPaste.alpha = 0.5f
         }
-        dialog.show()
+        btnMenuPdf.visibility = View.VISIBLE
+        btnMenuImg.visibility = View.VISIBLE
+        btnMenuFlip.visibility = View.GONE
+        btnMenuRotate.visibility = View.GONE
+        btnMenuBw.visibility = View.GONE
+        btnMenuPractice.visibility = View.VISIBLE
+        btnMenuPractice.text = "Switch to Practice"
+        btnMenuArrange.visibility = View.VISIBLE
+        btnMenuReset.visibility = View.VISIBLE
+        btnMenuReset.text = "Reset Canvas"
+        btnMenuDel.visibility = View.GONE
+        btnMenuClear.visibility = View.VISIBLE
+
+        positionMenu(touchX, touchY)
+        menuCard.visibility = View.VISIBLE
+    }
+
+    private fun positionMenu(touchX: Float, touchY: Float) {
+        menuCard.post {
+            val parentW = contentArea.width
+            val parentH = contentArea.height
+            val density = resources.displayMetrics.density
+            val menuW = menuCard.width.takeIf { it > 0 } ?: (165 * density).toInt()
+            val menuH = menuCard.height.takeIf { it > 0 } ?: (200 * density).toInt()
+
+            val maxX = (parentW - menuW - 10).toFloat().coerceAtLeast(10f)
+            val maxY = (parentH - menuH - 10).toFloat().coerceAtLeast(10f)
+
+            val targetX = (touchX - menuW / 2).coerceIn(10f, maxX)
+            val targetY = (touchY - 20f).coerceIn(10f, maxY)
+
+            menuCard.translationX = targetX
+            menuCard.translationY = targetY
+        }
+    }
+
+    private fun hideMenu() {
+        if (::menuCard.isInitialized) {
+            menuCard.visibility = View.GONE
+        }
     }
 
     private fun switchToReferenceMode() {
+        hideMenu()
         refCanvas.currentMode = RefCanvasView.MODE_REFERENCE
         btnModeToggle.text = "Ref Board"
-        refControls.visibility = View.VISIBLE
-        practiceControls.visibility = View.GONE
+        dockRefScroll.visibility = View.VISIBLE
+        dockPracticeScroll.visibility = View.GONE
         hudCard.visibility = View.GONE
         pauseTimer()
     }
 
     private fun switchToPracticeMode() {
+        hideMenu()
         if (refCanvas.practiceItems.isEmpty() && refCanvas.items.isNotEmpty()) {
             val bitmaps = refCanvas.items.map { it.bitmap }
             refCanvas.setPracticeList(bitmaps)
@@ -395,13 +577,14 @@ class FloatingOverlayService : Service() {
         }
         refCanvas.currentMode = RefCanvasView.MODE_PRACTICE
         btnModeToggle.text = "Practice"
-        refControls.visibility = View.GONE
-        practiceControls.visibility = View.VISIBLE
+        dockRefScroll.visibility = View.GONE
+        dockPracticeScroll.visibility = View.VISIBLE
         hudCard.visibility = View.VISIBLE
         updateTimerDisplay()
     }
 
     private fun minimizeWindow() {
+        hideMenu()
         savedWidth = params.width
         savedHeight = params.height
         windowContainer.visibility = View.GONE
