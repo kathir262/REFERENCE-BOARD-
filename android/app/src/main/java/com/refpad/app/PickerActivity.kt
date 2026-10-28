@@ -152,35 +152,59 @@ class PickerActivity : Activity() {
                     }
 
                     REQ_PICK_PDF_REF -> {
-                        data.data?.let { uri ->
-                            val pages = PdfHelper.renderPdfPages(this@PickerActivity, uri)
-                            runOnUiThread {
-                                for (page in pages) {
-                                    DataManager.addReference(page)
-                                }
-                                if (pages.isNotEmpty()) {
-                                    Toast.makeText(applicationContext, "Loaded ${pages.size} PDF page(s)", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(applicationContext, "Could not load PDF pages", Toast.LENGTH_SHORT).show()
-                                }
-                                finish()
+                        val uris = mutableListOf<Uri>()
+                        data.data?.let { uris.add(it) }
+                        data.clipData?.let { clipData ->
+                            for (i in 0 until clipData.itemCount) {
+                                val u = clipData.getItemAt(i).uri
+                                if (!uris.contains(u)) uris.add(u)
                             }
-                        } ?: runOnUiThread { finish() }
+                        }
+
+                        val loadedPages = mutableListOf<Bitmap>()
+                        for (uri in uris) {
+                            val pages = PdfHelper.renderPdfPages(this@PickerActivity, uri)
+                            loadedPages.addAll(pages)
+                        }
+
+                        runOnUiThread {
+                            for (page in loadedPages) {
+                                DataManager.addReference(page)
+                            }
+                            if (loadedPages.isNotEmpty()) {
+                                Toast.makeText(applicationContext, "Loaded ${loadedPages.size} PDF page(s)", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(applicationContext, "Could not load PDF pages", Toast.LENGTH_SHORT).show()
+                            }
+                            finish()
+                        }
                     }
 
                     REQ_PICK_PDF_PRACTICE -> {
-                        data.data?.let { uri ->
-                            val pages = PdfHelper.renderPdfPages(this@PickerActivity, uri)
-                            runOnUiThread {
-                                DataManager.addPracticeImages(pages)
-                                if (pages.isNotEmpty()) {
-                                    Toast.makeText(applicationContext, "Loaded ${pages.size} pages to Practice Mode", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(applicationContext, "Could not load PDF pages", Toast.LENGTH_SHORT).show()
-                                }
-                                finish()
+                        val uris = mutableListOf<Uri>()
+                        data.data?.let { uris.add(it) }
+                        data.clipData?.let { clipData ->
+                            for (i in 0 until clipData.itemCount) {
+                                val u = clipData.getItemAt(i).uri
+                                if (!uris.contains(u)) uris.add(u)
                             }
-                        } ?: runOnUiThread { finish() }
+                        }
+
+                        val loadedPages = mutableListOf<Bitmap>()
+                        for (uri in uris) {
+                            val pages = PdfHelper.renderPdfPages(this@PickerActivity, uri)
+                            loadedPages.addAll(pages)
+                        }
+
+                        runOnUiThread {
+                            DataManager.addPracticeImages(loadedPages)
+                            if (loadedPages.isNotEmpty()) {
+                                Toast.makeText(applicationContext, "Loaded ${loadedPages.size} pages to Practice Mode", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(applicationContext, "Could not load PDF pages", Toast.LENGTH_SHORT).show()
+                            }
+                            finish()
+                        }
                     }
                     else -> runOnUiThread { finish() }
                 }

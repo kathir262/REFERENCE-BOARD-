@@ -545,14 +545,25 @@ class MainActivity : Activity() {
             }
 
             PICK_PDF_REQ_CODE -> {
-                data.data?.let { uri ->
-                    val pages = PdfHelper.renderPdfPages(this, uri)
-                    if (pages.isNotEmpty()) {
-                        dispatchBitmaps(pages)
-                        Toast.makeText(this, "Loaded ${pages.size} PDF pages", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(this, "Unable to load PDF pages", Toast.LENGTH_SHORT).show()
+                val uris = mutableListOf<Uri>()
+                data.data?.let { uris.add(it) }
+                data.clipData?.let { clipData ->
+                    for (i in 0 until clipData.itemCount) {
+                        val u = clipData.getItemAt(i).uri
+                        if (!uris.contains(u)) uris.add(u)
                     }
+                }
+
+                val allPages = mutableListOf<Bitmap>()
+                for (uri in uris) {
+                    allPages.addAll(PdfHelper.renderPdfPages(this, uri))
+                }
+
+                if (allPages.isNotEmpty()) {
+                    dispatchBitmaps(allPages)
+                    Toast.makeText(this, "Loaded ${allPages.size} PDF page(s)", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Unable to load PDF pages", Toast.LENGTH_SHORT).show()
                 }
             }
 

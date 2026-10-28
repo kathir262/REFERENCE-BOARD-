@@ -67,8 +67,8 @@ object PdfHelper {
                                 h = Math.max(1, (h * scale).toInt())
                             }
 
-                            // Use RGB_565 (2 bytes per pixel) for maximum memory efficiency on mobile
-                            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565)
+                            // Use ARGB_8888 (Mandatory for Android PdfRenderer native rendering engine)
+                            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                             bitmap.eraseColor(Color.WHITE)
                             page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                             page.close()
