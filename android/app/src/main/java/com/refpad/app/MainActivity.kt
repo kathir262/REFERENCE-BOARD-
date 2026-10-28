@@ -55,6 +55,7 @@ class MainActivity : Activity() {
         initViews()
         setupListeners()
         setupPracticeHUD()
+        setupLongPressMenus()
         syncWithDataManager()
 
         handleIncomingIntent(intent)
@@ -86,6 +87,12 @@ class MainActivity : Activity() {
 
     private fun setupListeners() {
         // Top Bar
+        findViewById<Button>(R.id.btn_top_pdf).setOnClickListener {
+            promptDestinationDialog { targetMode ->
+                openPdfPicker(targetMode)
+            }
+        }
+
         findViewById<Button>(R.id.btn_float_overlay).setOnClickListener {
             checkOverlayPermissionAndLaunch()
         }
@@ -107,12 +114,14 @@ class MainActivity : Activity() {
             loadSampleReferences()
         }
 
-        findViewById<Button>(R.id.btn_empty_images).setOnClickListener {
-            openImagePicker(0)
+        findViewById<Button>(R.id.btn_empty_pdf).setOnClickListener {
+            promptDestinationDialog { targetMode ->
+                openPdfPicker(targetMode)
+            }
         }
 
-        findViewById<Button>(R.id.btn_empty_pdf).setOnClickListener {
-            openPdfPicker(0)
+        findViewById<Button>(R.id.btn_empty_images).setOnClickListener {
+            openImagePicker(0)
         }
 
         findViewById<Button>(R.id.btn_empty_folder).setOnClickListener {
@@ -122,6 +131,12 @@ class MainActivity : Activity() {
         // Bottom Dock - Reference Mode
         findViewById<Button>(R.id.btn_dock_menu).setOnClickListener {
             showMainMenu()
+        }
+
+        findViewById<Button>(R.id.btn_dock_pdf).setOnClickListener {
+            promptDestinationDialog { targetMode ->
+                openPdfPicker(targetMode)
+            }
         }
 
         findViewById<Button>(R.id.btn_dock_add).setOnClickListener {
@@ -161,6 +176,11 @@ class MainActivity : Activity() {
             if (isPlaying) startTimer(durationSeconds)
         }
 
+        findViewById<Button>(R.id.btn_dock_practice_pdf).setOnClickListener {
+            // Load PDF directly into Practice Mode
+            openPdfPicker(1)
+        }
+
         btnDockPlayPause.setOnClickListener {
             togglePlayPause()
         }
@@ -186,6 +206,81 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.btn_dock_to_ref).setOnClickListener {
             switchToReferenceMode()
         }
+    }
+
+    private fun setupLongPressMenus() {
+        refCanvas.onItemLongPressed = { item, _, _ ->
+            showItemContextMenu(item)
+        }
+
+        refCanvas.onCanvasLongPressed = { _, _ ->
+            showCanvasContextMenu()
+        }
+    }
+
+    private fun showItemContextMenu(item: RefBoardItem) {
+        val options = arrayOf(
+            "Flip Horizontal",
+            "Rotate 90 CW",
+            "Rotate 90 CCW",
+            "Toggle Grayscale (B&W)",
+            "Send to Practice Mode",
+            "Reset Transforms",
+            "Delete Reference"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Reference Image Operations")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> refCanvas.flipSelected()
+                    1 -> refCanvas.rotateSelectedCW()
+                    2 -> refCanvas.rotateSelectedCCW()
+                    3 -> refCanvas.toggleGrayscaleSelected()
+                    4 -> {
+                        refCanvas.practiceItems.add(item.bitmap)
+                        DataManager.addPracticeImages(listOf(item.bitmap))
+                        switchToPracticeMode()
+                        Toast.makeText(this, "Added to Practice Mode", Toast.LENGTH_SHORT).show()
+                    }
+                    5 -> refCanvas.resetSelectedTransforms()
+                    6 -> refCanvas.deleteSelected()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showCanvasContextMenu() {
+        val options = arrayOf(
+            "Import PDF Reference",
+            "Import Images",
+            "Import Folder",
+            "Load Sample References",
+            "Auto Arrange References",
+            "Switch to Practice Mode",
+            "Float Over Drawing App",
+            "Clear Canvas"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Reference Board Menu")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> promptDestinationDialog { openPdfPicker(it) }
+                    1 -> promptDestinationDialog { openImagePicker(it) }
+                    2 -> promptDestinationDialog { openFolderPicker(it) }
+                    3 -> loadSampleReferences()
+                    4 -> refCanvas.autoArrange()
+                    5 -> switchToPracticeMode()
+                    6 -> checkOverlayPermissionAndLaunch()
+                    7 -> {
+                        refCanvas.clearAll()
+                        DataManager.referenceImages.clear()
+                        Toast.makeText(this, "Canvas cleared", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun setupPracticeHUD() {
@@ -231,7 +326,6 @@ class MainActivity : Activity() {
 
     private fun switchToPracticeMode() {
         if (refCanvas.practiceItems.isEmpty() && refCanvas.items.isNotEmpty()) {
-            // Use current board items for practice
             val bitmaps = refCanvas.items.map { it.bitmap }
             refCanvas.setPracticeList(bitmaps)
             DataManager.addPracticeImages(bitmaps)
@@ -288,34 +382,7 @@ class MainActivity : Activity() {
     }
 
     private fun showMainMenu() {
-        val options = arrayOf(
-            "Import Images",
-            "Import PDF Reference",
-            "Import Folder",
-            "Auto Arrange References",
-            "Float Over Drawing App",
-            "Load Sample References",
-            "Clear Canvas"
-        )
-        AlertDialog.Builder(this)
-            .setTitle("Reference Board Menu")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> promptDestinationDialog { openImagePicker(it) }
-                    1 -> promptDestinationDialog { openPdfPicker(it) }
-                    2 -> promptDestinationDialog { openFolderPicker(it) }
-                    3 -> refCanvas.autoArrange()
-                    4 -> checkOverlayPermissionAndLaunch()
-                    5 -> loadSampleReferences()
-                    6 -> {
-                        refCanvas.clearAll()
-                        DataManager.referenceImages.clear()
-                        Toast.makeText(this, "Canvas cleared", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-            .setNegativeButton("Close", null)
-            .show()
+        showCanvasContextMenu()
     }
 
     private fun promptDestinationDialog(onChosen: (Int) -> Unit) {
@@ -355,8 +422,10 @@ class MainActivity : Activity() {
     }
 
     private fun handleIncomingIntent(intent: Intent) {
-        if (intent.getStringExtra("action") == "pick_image") {
-            openImagePicker(0)
+        when (intent.getStringExtra("action")) {
+            "pick_image" -> openImagePicker(0)
+            "pick_pdf_ref" -> openPdfPicker(0)
+            "pick_pdf_practice" -> openPdfPicker(1)
         }
     }
 
@@ -491,7 +560,7 @@ class MainActivity : Activity() {
             refCanvas.setPracticeList(bitmaps)
             DataManager.addPracticeImages(bitmaps)
             switchToPracticeMode()
-            Toast.makeText(this, "Added to Practice Mode", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Added ${bitmaps.size} poses to Practice Mode", Toast.LENGTH_SHORT).show()
         }
         emptyStateView.visibility = View.GONE
     }

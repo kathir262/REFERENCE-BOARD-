@@ -15,6 +15,7 @@ class RefBoardItem(
     var scale: Float = 1.0f,
     var isFlipped: Boolean = false,
     var isGrayscale: Boolean = false,
+    var rotationDegrees: Float = 0f,
     var isSelected: Boolean = false
 ) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -48,22 +49,58 @@ class RefBoardItem(
     val height: Float
         get() = bitmap.height * scale
 
+    val isRotated90: Boolean
+        get() = (Math.abs(rotationDegrees.toInt()) % 180) != 0
+
+    val effectiveWidth: Float
+        get() = if (isRotated90) height else width
+
+    val effectiveHeight: Float
+        get() = if (isRotated90) width else height
+
     val bounds: RectF
-        get() = RectF(x, y, x + width, y + height)
+        get() {
+            val centerX = x + width / 2f
+            val centerY = y + height / 2f
+            val ew = effectiveWidth
+            val eh = effectiveHeight
+            return RectF(centerX - ew / 2f, centerY - eh / 2f, centerX + ew / 2f, centerY + eh / 2f)
+        }
 
     fun hitTest(touchX: Float, touchY: Float): Boolean {
         return bounds.contains(touchX, touchY)
     }
 
+    fun rotateCW() {
+        rotationDegrees = (rotationDegrees + 90f) % 360f
+    }
+
+    fun rotateCCW() {
+        rotationDegrees = (rotationDegrees - 90f) % 360f
+    }
+
+    fun resetTransforms() {
+        isFlipped = false
+        isGrayscale = false
+        rotationDegrees = 0f
+        scale = 0.5f
+    }
+
     fun draw(canvas: Canvas) {
+        val centerX = x + width / 2f
+        val centerY = y + height / 2f
+
         canvas.save()
 
         // Grayscale filter
         paint.colorFilter = if (isGrayscale) grayscaleFilter else null
 
-        // Flip transform around item center
+        // Rotation & Flip around item center
+        if (rotationDegrees != 0f) {
+            canvas.rotate(rotationDegrees, centerX, centerY)
+        }
         if (isFlipped) {
-            canvas.scale(-1f, 1f, x + width / 2f, y + height / 2f)
+            canvas.scale(-1f, 1f, centerX, centerY)
         }
 
         // Draw scaled bitmap

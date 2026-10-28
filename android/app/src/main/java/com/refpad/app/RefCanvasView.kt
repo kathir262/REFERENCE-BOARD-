@@ -7,7 +7,6 @@ import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
-import android.graphics.PointF
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.GestureDetector
@@ -46,6 +45,8 @@ class RefCanvasView @JvmOverloads constructor(
 
     var onPoseChanged: ((index: Int, total: Int) -> Unit)? = null
     var onItemsCountChanged: ((count: Int) -> Unit)? = null
+    var onItemLongPressed: ((item: RefBoardItem, screenX: Float, screenY: Float) -> Unit)? = null
+    var onCanvasLongPressed: ((screenX: Float, screenY: Float) -> Unit)? = null
 
     // Canvas Transforms
     private var canvasScale = 1.0f
@@ -79,7 +80,6 @@ class RefCanvasView @JvmOverloads constructor(
             val prevScale = canvasScale
             canvasScale = (canvasScale * scaleFactor).coerceIn(0.1f, 8.0f)
 
-            // Zoom centering on focus point
             val focusX = detector.focusX
             val focusY = detector.focusY
             canvasOffsetX = focusX - (focusX - canvasOffsetX) * (canvasScale / prevScale)
@@ -87,6 +87,36 @@ class RefCanvasView @JvmOverloads constructor(
 
             invalidate()
             return true
+        }
+    })
+
+    private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onLongPress(e: MotionEvent) {
+            val touchX = e.x
+            val touchY = e.y
+            val canvasX = (touchX - canvasOffsetX) / canvasScale
+            val canvasY = (touchY - canvasOffsetY) / canvasScale
+
+            if (currentMode == MODE_REFERENCE) {
+                val hit = items.findLast { it.hitTest(canvasX, canvasY) }
+                if (hit != null) {
+                    items.forEach { it.isSelected = false }
+                    hit.isSelected = true
+                    selectedItem = hit
+                    isDraggingItem = false
+                    isPanning = false
+                    invalidate()
+                    onItemLongPressed?.invoke(hit, touchX, touchY)
+                } else {
+                    isDraggingItem = false
+                    isPanning = false
+                    onCanvasLongPressed?.invoke(touchX, touchY)
+                }
+            } else {
+                isDraggingItem = false
+                isPanning = false
+                onCanvasLongPressed?.invoke(touchX, touchY)
+            }
         }
     })
 
@@ -113,6 +143,27 @@ class RefCanvasView @JvmOverloads constructor(
             }
         } else {
             flipPracticePose()
+        }
+    }
+
+    fun rotateSelectedCW() {
+        selectedItem?.let {
+            it.rotateCW()
+            invalidate()
+        }
+    }
+
+    fun rotateSelectedCCW() {
+        selectedItem?.let {
+            it.rotateCCW()
+            invalidate()
+        }
+    }
+
+    fun resetSelectedTransforms() {
+        selectedItem?.let {
+            it.resetTransforms()
+            invalidate()
         }
     }
 
@@ -151,7 +202,7 @@ class RefCanvasView @JvmOverloads constructor(
         for (item in items) {
             item.x = curX
             item.y = startY
-            curX += item.width + padding
+            curX += item.effectiveWidth + padding
         }
         resetCanvasTransform()
         invalidate()
@@ -213,9 +264,9 @@ class RefCanvasView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         scaleDetector.onTouchEvent(event)
+        gestureDetector.onTouchEvent(event)
 
         if (event.pointerCount > 1) {
-            // Multi-touch gestures take precedence
             isDraggingItem = false
             isPanning = false
             return true
@@ -224,14 +275,12 @@ class RefCanvasView @JvmOverloads constructor(
         val touchX = event.x
         val touchY = event.y
 
-        // Convert touch to Canvas Coordinates
         val canvasX = (touchX - canvasOffsetX) / canvasScale
         val canvasY = (touchY - canvasOffsetY) / canvasScale
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 if (currentMode == MODE_REFERENCE) {
-                    // Check if touching any item (reverse loop to pick top item)
                     val hit = items.findLast { it.hitTest(canvasX, canvasY) }
                     if (hit != null) {
                         items.forEach { it.isSelected = false }
@@ -243,7 +292,6 @@ class RefCanvasView @JvmOverloads constructor(
                         itemStartX = hit.x
                         itemStartY = hit.y
                     } else {
-                        // Empty canvas touch: prepare to pan
                         isDraggingItem = false
                         isPanning = true
                         lastPanX = touchX
@@ -252,7 +300,6 @@ class RefCanvasView @JvmOverloads constructor(
                         selectedItem = null
                     }
                 } else {
-                    // Practice mode: 1-finger pan
                     isPanning = true
                     lastPanX = touchX
                     lastPanY = touchY
@@ -295,7 +342,6 @@ class RefCanvasView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // Fill background
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
 
         canvas.save()
@@ -303,12 +349,10 @@ class RefCanvasView @JvmOverloads constructor(
         canvas.scale(canvasScale, canvasScale)
 
         if (currentMode == MODE_REFERENCE) {
-            // Draw all reference items
             for (item in items) {
                 item.draw(canvas)
             }
         } else {
-            // Draw active practice pose centered
             if (practiceItems.isNotEmpty() && practiceCurrentIndex < practiceItems.size) {
                 val pose = practiceItems[practiceCurrentIndex]
                 val viewW = width / canvasScale

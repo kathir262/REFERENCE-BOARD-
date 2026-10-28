@@ -1,5 +1,6 @@
 package com.refpad.app
 
+import android.app.AlertDialog
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -86,6 +87,7 @@ class FloatingOverlayService : Service() {
         initViews()
         setupDragAndResize()
         setupListeners()
+        setupLongPressMenus()
         setupDataManagerSync()
 
         windowManager.addView(overlayView, params)
@@ -107,14 +109,12 @@ class FloatingOverlayService : Service() {
         refControls = overlayView.findViewById(R.id.ref_controls)
         practiceControls = overlayView.findViewById(R.id.practice_controls)
 
-        // Pose changed callback
         refCanvas.onPoseChanged = { current, total ->
             tvPoseCounter.text = "Pose $current/$total"
         }
     }
 
     private fun setupDragAndResize() {
-        // Drag window by top header
         val header = overlayView.findViewById<View>(R.id.header_bar)
         header.setOnTouchListener { _, event ->
             when (event.action) {
@@ -135,7 +135,6 @@ class FloatingOverlayService : Service() {
             }
         }
 
-        // Drag minimized bubble
         minimizedBubble.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -152,7 +151,6 @@ class FloatingOverlayService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    // Tap bubble to expand back
                     if (Math.abs(event.rawX - initialTouchX) < 15 && Math.abs(event.rawY - initialTouchY) < 15) {
                         expandWindow()
                     }
@@ -162,7 +160,6 @@ class FloatingOverlayService : Service() {
             }
         }
 
-        // Corner Resize Handle
         val resizeHandle = overlayView.findViewById<View>(R.id.resize_handle)
         var startW = 0
         var startH = 0
@@ -193,7 +190,6 @@ class FloatingOverlayService : Service() {
     }
 
     private fun setupListeners() {
-        // Window Control Buttons
         overlayView.findViewById<View>(R.id.btn_close).setOnClickListener {
             stopSelf()
         }
@@ -202,7 +198,6 @@ class FloatingOverlayService : Service() {
             minimizeWindow()
         }
 
-        // Mode Toggle
         btnModeToggle.setOnClickListener {
             if (refCanvas.currentMode == RefCanvasView.MODE_REFERENCE) {
                 switchToPracticeMode()
@@ -212,6 +207,14 @@ class FloatingOverlayService : Service() {
         }
 
         // Reference Mode Toolbar
+        overlayView.findViewById<View>(R.id.btn_pdf_ref).setOnClickListener {
+            val intent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("action", "pick_pdf_ref")
+            }
+            startActivity(intent)
+        }
+
         overlayView.findViewById<View>(R.id.btn_add_ref).setOnClickListener {
             val intent = Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -249,6 +252,14 @@ class FloatingOverlayService : Service() {
             }
         }
 
+        overlayView.findViewById<View>(R.id.btn_pdf_practice).setOnClickListener {
+            val intent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("action", "pick_pdf_practice")
+            }
+            startActivity(intent)
+        }
+
         btnPlayPause.setOnClickListener {
             togglePlayPause()
         }
@@ -272,6 +283,101 @@ class FloatingOverlayService : Service() {
         }
     }
 
+    private fun setupLongPressMenus() {
+        refCanvas.onItemLongPressed = { item, _, _ ->
+            showOverlayItemDialog(item)
+        }
+
+        refCanvas.onCanvasLongPressed = { _, _ ->
+            showOverlayCanvasDialog()
+        }
+    }
+
+    private fun showOverlayItemDialog(item: RefBoardItem) {
+        val options = arrayOf(
+            "Flip Horizontal",
+            "Rotate 90 CW",
+            "Rotate 90 CCW",
+            "Toggle Grayscale (B&W)",
+            "Send to Practice Mode",
+            "Reset Transforms",
+            "Delete Reference"
+        )
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("Reference Operations")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> refCanvas.flipSelected()
+                    1 -> refCanvas.rotateSelectedCW()
+                    2 -> refCanvas.rotateSelectedCCW()
+                    3 -> refCanvas.toggleGrayscaleSelected()
+                    4 -> {
+                        refCanvas.practiceItems.add(item.bitmap)
+                        DataManager.addPracticeImages(listOf(item.bitmap))
+                        switchToPracticeMode()
+                    }
+                    5 -> refCanvas.resetSelectedTransforms()
+                    6 -> refCanvas.deleteSelected()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .create()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        } else {
+            @Suppress("DEPRECATION")
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+        }
+        dialog.show()
+    }
+
+    private fun showOverlayCanvasDialog() {
+        val options = arrayOf(
+            "Import PDF Reference",
+            "Import Image(s)",
+            "Auto Arrange References",
+            "Switch to Practice Mode",
+            "Clear Canvas"
+        )
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("Reference Board")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        val intent = Intent(this, MainActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                            putExtra("action", "pick_pdf_ref")
+                        }
+                        startActivity(intent)
+                    }
+                    1 -> {
+                        val intent = Intent(this, MainActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                            putExtra("action", "pick_image")
+                        }
+                        startActivity(intent)
+                    }
+                    2 -> refCanvas.autoArrange()
+                    3 -> switchToPracticeMode()
+                    4 -> {
+                        refCanvas.clearAll()
+                        DataManager.referenceImages.clear()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .create()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        } else {
+            @Suppress("DEPRECATION")
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+        }
+        dialog.show()
+    }
+
     private fun switchToReferenceMode() {
         refCanvas.currentMode = RefCanvasView.MODE_REFERENCE
         btnModeToggle.text = "Ref Board"
@@ -282,6 +388,11 @@ class FloatingOverlayService : Service() {
     }
 
     private fun switchToPracticeMode() {
+        if (refCanvas.practiceItems.isEmpty() && refCanvas.items.isNotEmpty()) {
+            val bitmaps = refCanvas.items.map { it.bitmap }
+            refCanvas.setPracticeList(bitmaps)
+            DataManager.addPracticeImages(bitmaps)
+        }
         refCanvas.currentMode = RefCanvasView.MODE_PRACTICE
         btnModeToggle.text = "Practice"
         refControls.visibility = View.GONE
@@ -340,7 +451,6 @@ class FloatingOverlayService : Service() {
             }
 
             override fun onFinish() {
-                // Auto advance to next pose
                 refCanvas.nextPracticePose()
                 timeRemainingSeconds = durationSeconds
                 startTimer(durationSeconds)
@@ -355,7 +465,6 @@ class FloatingOverlayService : Service() {
     }
 
     private fun setupDataManagerSync() {
-        // Sync existing data
         for (bmp in DataManager.referenceImages) {
             refCanvas.addReferenceItem(bmp)
         }
@@ -363,7 +472,6 @@ class FloatingOverlayService : Service() {
             refCanvas.setPracticeList(DataManager.practiceImages)
         }
 
-        // Listen for new additions
         DataManager.onNewReferenceAdded = { bmp ->
             refCanvas.addReferenceItem(bmp)
         }

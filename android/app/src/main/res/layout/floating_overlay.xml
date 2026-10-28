@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/overlay_root"
-    android:layout_width="360dp"
-    android:layout_height="460dp">
+    android:layout_width="380dp"
+    android:layout_height="480dp">
 
     <!-- Expanded Window Container -->
     <LinearLayout
@@ -132,8 +132,8 @@
             android:layout_width="match_parent"
             android:layout_height="42dp"
             android:background="#2018181B"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp">
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp">
 
             <!-- Reference Board Controls -->
             <LinearLayout
@@ -145,59 +145,71 @@
                 android:visibility="visible">
 
                 <Button
+                    android:id="@+id/btn_pdf_ref"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_margin="1dp"
+                    android:layout_weight="1.1"
+                    android:background="@drawable/btn_action_bg"
+                    android:text="+ PDF"
+                    android:textColor="@color/accent_yellow"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+
+                <Button
                     android:id="@+id/btn_add_ref"
                     android:layout_width="0dp"
                     android:layout_height="30dp"
-                    android:layout_margin="2dp"
-                    android:layout_weight="1"
+                    android:layout_margin="1dp"
+                    android:layout_weight="1.1"
                     android:background="@drawable/btn_action_bg"
-                    android:text="@string/btn_add"
+                    android:text="+ Image"
                     android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
+                    android:textSize="10sp" />
 
                 <Button
                     android:id="@+id/btn_flip_ref"
                     android:layout_width="0dp"
                     android:layout_height="30dp"
-                    android:layout_margin="2dp"
+                    android:layout_margin="1dp"
                     android:layout_weight="1"
                     android:background="@drawable/btn_action_bg"
                     android:text="@string/btn_flip"
                     android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
+                    android:textSize="10sp" />
 
                 <Button
                     android:id="@+id/btn_bw_ref"
                     android:layout_width="0dp"
                     android:layout_height="30dp"
-                    android:layout_margin="2dp"
+                    android:layout_margin="1dp"
                     android:layout_weight="1"
                     android:background="@drawable/btn_action_bg"
                     android:text="@string/btn_mono"
                     android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
+                    android:textSize="10sp" />
 
                 <Button
                     android:id="@+id/btn_reset_ref"
                     android:layout_width="0dp"
                     android:layout_height="30dp"
-                    android:layout_margin="2dp"
+                    android:layout_margin="1dp"
                     android:layout_weight="1"
                     android:background="@drawable/btn_action_bg"
                     android:text="@string/btn_reset"
                     android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
+                    android:textSize="10sp" />
 
                 <Button
                     android:id="@+id/btn_del_ref"
                     android:layout_width="0dp"
                     android:layout_height="30dp"
-                    android:layout_margin="2dp"
-                    android:layout_weight="1"
+                    android:layout_margin="1dp"
+                    android:layout_weight="0.9"
                     android:background="@drawable/btn_action_bg"
                     android:text="@string/btn_del"
                     android:textColor="@color/text_danger"
-                    android:textSize="11sp" />
+                    android:textSize="10sp" />
             </LinearLayout>
 
             <!-- Practice Mode Controls -->
@@ -213,68 +225,81 @@
                     android:id="@+id/btn_interval"
                     android:layout_width="0dp"
                     android:layout_height="30dp"
-                    android:layout_margin="2dp"
-                    android:layout_weight="1"
+                    android:layout_margin="1dp"
+                    android:layout_weight="0.9"
                     android:background="@drawable/btn_action_bg"
                     android:text="2m"
                     android:textColor="@color/accent_yellow"
-                    android:textSize="11sp" />
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btn_pdf_practice"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_margin="1dp"
+                    android:layout_weight="1.1"
+                    android:background="@drawable/btn_action_bg"
+                    android:text="+ PDF"
+                    android:textColor="@color/accent_yellow"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
 
                 <Button
                     android:id="@+id/btn_prev_pose"
                     android:layout_width="0dp"
                     android:layout_height="30dp"
-                    android:layout_margin="2dp"
-                    android:layout_weight="1"
+                    android:layout_margin="1dp"
+                    android:layout_weight="0.9"
                     android:background="@drawable/btn_action_bg"
                     android:text="@string/btn_prev"
                     android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
+                    android:textSize="10sp" />
 
                 <Button
                     android:id="@+id/btn_play_pause"
                     android:layout_width="0dp"
                     android:layout_height="30dp"
-                    android:layout_margin="2dp"
-                    android:layout_weight="1.2"
+                    android:layout_margin="1dp"
+                    android:layout_weight="1.1"
                     android:background="@drawable/btn_action_bg"
                     android:text="@string/btn_play"
                     android:textColor="@color/accent_yellow"
-                    android:textSize="11sp"
+                    android:textSize="10sp"
                     android:textStyle="bold" />
 
                 <Button
                     android:id="@+id/btn_next_pose"
                     android:layout_width="0dp"
                     android:layout_height="30dp"
-                    android:layout_margin="2dp"
-                    android:layout_weight="1"
+                    android:layout_margin="1dp"
+                    android:layout_weight="0.9"
                     android:background="@drawable/btn_action_bg"
                     android:text="@string/btn_next"
                     android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
+                    android:textSize="10sp" />
 
                 <Button
                     android:id="@+id/btn_flip_practice"
                     android:layout_width="0dp"
                     android:layout_height="30dp"
-                    android:layout_margin="2dp"
-                    android:layout_weight="1"
+                    android:layout_margin="1dp"
+                    android:layout_weight="0.9"
                     android:background="@drawable/btn_action_bg"
                     android:text="@string/btn_flip"
                     android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
+                    android:textSize="10sp" />
 
                 <Button
                     android:id="@+id/btn_bw_practice"
                     android:layout_width="0dp"
                     android:layout_height="30dp"
-                    android:layout_margin="2dp"
-                    android:layout_weight="1"
+                    android:layout_margin="1dp"
+                    android:layout_weight="0.9"
                     android:background="@drawable/btn_action_bg"
                     android:text="@string/btn_mono"
                     android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
+                    android:textSize="10sp" />
             </LinearLayout>
 
         </FrameLayout>
