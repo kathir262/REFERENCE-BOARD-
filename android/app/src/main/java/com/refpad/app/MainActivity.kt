@@ -34,6 +34,8 @@ class MainActivity : Activity() {
     private lateinit var btnModeToggle: Button
     private lateinit var dockRefControls: View
     private lateinit var dockPracticeControls: View
+    private lateinit var dockRefScroll: View
+    private lateinit var dockPracticeScroll: View
     private lateinit var btnDockPlayPause: Button
     private lateinit var btnDockInterval: Button
 
@@ -77,6 +79,8 @@ class MainActivity : Activity() {
         btnModeToggle = findViewById(R.id.btn_mode_toggle)
         dockRefControls = findViewById(R.id.dock_ref_controls)
         dockPracticeControls = findViewById(R.id.dock_practice_controls)
+        dockRefScroll = findViewById(R.id.dock_ref_scroll)
+        dockPracticeScroll = findViewById(R.id.dock_practice_scroll)
         btnDockPlayPause = findViewById(R.id.btn_dock_play_pause)
         btnDockInterval = findViewById(R.id.btn_dock_interval)
 
@@ -318,8 +322,8 @@ class MainActivity : Activity() {
     private fun switchToReferenceMode() {
         refCanvas.currentMode = RefCanvasView.MODE_REFERENCE
         btnModeToggle.text = "Ref Board"
-        dockRefControls.visibility = View.VISIBLE
-        dockPracticeControls.visibility = View.GONE
+        dockRefScroll.visibility = View.VISIBLE
+        dockPracticeScroll.visibility = View.GONE
         hudCard.visibility = View.GONE
         pauseTimer()
     }
@@ -332,8 +336,8 @@ class MainActivity : Activity() {
         }
         refCanvas.currentMode = RefCanvasView.MODE_PRACTICE
         btnModeToggle.text = "Practice"
-        dockRefControls.visibility = View.GONE
-        dockPracticeControls.visibility = View.VISIBLE
+        dockRefScroll.visibility = View.GONE
+        dockPracticeScroll.visibility = View.VISIBLE
         hudCard.visibility = View.VISIBLE
         updateTimerDisplay()
     }

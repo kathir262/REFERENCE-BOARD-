@@ -84,74 +84,89 @@
 
     </LinearLayout>
 
-    <!-- Top App Bar -->
+    <!-- Top App Bar (Positioned below system status bar) -->
     <LinearLayout
         android:id="@+id/top_bar"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="50dp"
         android:layout_gravity="top"
+        android:layout_marginTop="34dp"
         android:background="#D0121214"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp">
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
 
         <TextView
             android:id="@+id/tv_app_title"
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:text="RefPad"
+            android:textColor="@color/accent_yellow"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <HorizontalScrollView
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="@string/app_name"
-            android:textColor="@color/accent_yellow"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            android:scrollbars="none">
 
-        <Button
-            android:id="@+id/btn_top_pdf"
-            android:layout_width="wrap_content"
-            android:layout_height="32dp"
-            android:layout_marginEnd="6dp"
-            android:background="@drawable/pill_button_bg"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:text="+ PDF"
-            android:textColor="@color/accent_yellow"
-            android:textSize="11sp"
-            android:textStyle="bold" />
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-        <Button
-            android:id="@+id/btn_mode_toggle"
-            android:layout_width="wrap_content"
-            android:layout_height="32dp"
-            android:layout_marginEnd="6dp"
-            android:background="@drawable/pill_button_bg"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:text="Ref Board"
-            android:textColor="@color/text_primary"
-            android:textSize="11sp" />
+                <Button
+                    android:id="@+id/btn_top_pdf"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="+ PDF"
+                    android:textColor="@color/accent_yellow"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/btn_float_overlay"
-            android:layout_width="wrap_content"
-            android:layout_height="32dp"
-            android:layout_marginEnd="6dp"
-            android:background="@drawable/btn_yellow_bg"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:text="Float Window"
-            android:textColor="@color/text_dark"
-            android:textSize="11sp"
-            android:textStyle="bold" />
+                <Button
+                    android:id="@+id/btn_mode_toggle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="Ref Board"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_float_overlay"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/btn_yellow_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="Float Window"
+                    android:textColor="@color/text_dark"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </HorizontalScrollView>
 
         <Button
             android:id="@+id/btn_top_menu"
-            android:layout_width="36dp"
-            android:layout_height="32dp"
+            android:layout_width="34dp"
+            android:layout_height="30dp"
             android:background="@drawable/pill_button_bg"
             android:text="≡"
             android:textColor="@color/text_primary"
-            android:textSize="16sp" />
+            android:textSize="15sp" />
 
     </LinearLayout>
 
@@ -162,7 +177,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
         android:layout_marginStart="16dp"
-        android:layout_marginTop="68dp"
+        android:layout_marginTop="92dp"
         android:background="@drawable/hud_background"
         android:gravity="center"
         android:orientation="vertical"
@@ -201,229 +216,245 @@
             android:textSize="9sp" />
     </LinearLayout>
 
-    <!-- Bottom Floating Dock (Centered Glass Pill) -->
+    <!-- Bottom Floating Dock (Centered Glass Pill with Horizontal Scroll on Phones) -->
     <FrameLayout
         android:id="@+id/bottom_dock_container"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="20dp"
+        android:layout_marginBottom="24dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
         android:background="@drawable/dock_background"
         android:padding="6dp">
 
         <!-- Reference Mode Dock Toolbar -->
-        <LinearLayout
-            android:id="@+id/dock_ref_controls"
+        <HorizontalScrollView
+            android:id="@+id/dock_ref_scroll"
             android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
             android:visibility="visible">
 
-            <Button
-                android:id="@+id/btn_dock_menu"
-                android:layout_width="34dp"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:text="≡"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp" />
-
-            <Button
-                android:id="@+id/btn_dock_pdf"
+            <LinearLayout
+                android:id="@+id/dock_ref_controls"
                 android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="+ PDF"
-                android:textColor="@color/accent_yellow"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+                android:layout_height="36dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/btn_dock_add"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="+ Image"
-                android:textColor="@color/text_primary"
-                android:textSize="11sp" />
+                <Button
+                    android:id="@+id/btn_dock_menu"
+                    android:layout_width="34dp"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:text="≡"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
 
-            <Button
-                android:id="@+id/btn_dock_flip"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="@string/btn_flip"
-                android:textColor="@color/text_primary"
-                android:textSize="11sp" />
+                <Button
+                    android:id="@+id/btn_dock_pdf"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="+ PDF"
+                    android:textColor="@color/accent_yellow"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
 
-            <Button
-                android:id="@+id/btn_dock_bw"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="@string/btn_mono"
-                android:textColor="@color/text_primary"
-                android:textSize="11sp" />
+                <Button
+                    android:id="@+id/btn_dock_add"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="+ Image"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
 
-            <Button
-                android:id="@+id/btn_dock_reset"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="@string/btn_reset"
-                android:textColor="@color/text_primary"
-                android:textSize="11sp" />
+                <Button
+                    android:id="@+id/btn_dock_flip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="@string/btn_flip"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
 
-            <Button
-                android:id="@+id/btn_dock_del"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="@string/btn_del"
-                android:textColor="@color/text_danger"
-                android:textSize="11sp" />
+                <Button
+                    android:id="@+id/btn_dock_bw"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="@string/btn_mono"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
 
-            <Button
-                android:id="@+id/btn_dock_to_practice"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:background="@drawable/btn_yellow_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="Practice"
-                android:textColor="@color/text_dark"
-                android:textSize="11sp"
-                android:textStyle="bold" />
-        </LinearLayout>
+                <Button
+                    android:id="@+id/btn_dock_reset"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="@string/btn_reset"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_dock_del"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="@string/btn_del"
+                    android:textColor="@color/text_danger"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_dock_to_practice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:background="@drawable/btn_yellow_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="Practice"
+                    android:textColor="@color/text_dark"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </HorizontalScrollView>
 
         <!-- Practice Mode Dock Toolbar -->
-        <LinearLayout
-            android:id="@+id/dock_practice_controls"
+        <HorizontalScrollView
+            android:id="@+id/dock_practice_scroll"
             android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
             android:visibility="gone">
 
-            <Button
-                android:id="@+id/btn_dock_interval"
+            <LinearLayout
+                android:id="@+id/dock_practice_controls"
                 android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="2m"
-                android:textColor="@color/accent_yellow"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+                android:layout_height="36dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/btn_dock_practice_pdf"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="+ PDF"
-                android:textColor="@color/accent_yellow"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+                <Button
+                    android:id="@+id/btn_dock_interval"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="2m"
+                    android:textColor="@color/accent_yellow"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
 
-            <Button
-                android:id="@+id/btn_dock_prev"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="@string/btn_prev"
-                android:textColor="@color/text_primary"
-                android:textSize="11sp" />
+                <Button
+                    android:id="@+id/btn_dock_practice_pdf"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="+ PDF"
+                    android:textColor="@color/accent_yellow"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
 
-            <Button
-                android:id="@+id/btn_dock_play_pause"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:text="@string/btn_play"
-                android:textColor="@color/accent_yellow"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+                <Button
+                    android:id="@+id/btn_dock_prev"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="@string/btn_prev"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
 
-            <Button
-                android:id="@+id/btn_dock_next"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="@string/btn_next"
-                android:textColor="@color/text_primary"
-                android:textSize="11sp" />
+                <Button
+                    android:id="@+id/btn_dock_play_pause"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:text="@string/btn_play"
+                    android:textColor="@color/accent_yellow"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
 
-            <Button
-                android:id="@+id/btn_dock_flip_p"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="@string/btn_flip"
-                android:textColor="@color/text_primary"
-                android:textSize="11sp" />
+                <Button
+                    android:id="@+id/btn_dock_next"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="@string/btn_next"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
 
-            <Button
-                android:id="@+id/btn_dock_bw_p"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/pill_button_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="@string/btn_mono"
-                android:textColor="@color/text_primary"
-                android:textSize="11sp" />
+                <Button
+                    android:id="@+id/btn_dock_flip_p"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="@string/btn_flip"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
 
-            <Button
-                android:id="@+id/btn_dock_to_ref"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:background="@drawable/btn_yellow_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="Ref Board"
-                android:textColor="@color/text_dark"
-                android:textSize="11sp"
-                android:textStyle="bold" />
-        </LinearLayout>
+                <Button
+                    android:id="@+id/btn_dock_bw_p"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/pill_button_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="@string/btn_mono"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_dock_to_ref"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:background="@drawable/btn_yellow_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="Ref Board"
+                    android:textColor="@color/text_dark"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </HorizontalScrollView>
 
     </FrameLayout>
 

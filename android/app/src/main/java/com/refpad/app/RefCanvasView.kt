@@ -121,11 +121,40 @@ class RefCanvasView @JvmOverloads constructor(
     })
 
     fun addReferenceItem(bitmap: Bitmap) {
+        val itemScale = 0.5f
+        val itemW = bitmap.width * itemScale
+        val itemH = bitmap.height * itemScale
+
+        val posX: Float
+        val posY: Float
+
+        if (items.isEmpty()) {
+            posX = 60f
+            posY = 100f
+        } else {
+            val last = items.last()
+            val candidateX = last.x + last.effectiveWidth + 40f
+            val maxRowWidth = 2200f
+
+            if (candidateX + itemW <= maxRowWidth) {
+                posX = candidateX
+                posY = last.y
+            } else {
+                var lowestY = 0f
+                for (it in items) {
+                    val bottom = it.y + it.effectiveHeight
+                    if (bottom > lowestY) lowestY = bottom
+                }
+                posX = 60f
+                posY = lowestY + 40f
+            }
+        }
+
         val item = RefBoardItem(
             bitmap = bitmap,
-            x = (width / 2f - (bitmap.width * 0.5f) / 2f - canvasOffsetX) / canvasScale,
-            y = (height / 2f - (bitmap.height * 0.5f) / 2f - canvasOffsetY) / canvasScale,
-            scale = 0.5f
+            x = posX,
+            y = posY,
+            scale = itemScale
         )
         items.forEach { it.isSelected = false }
         item.isSelected = true

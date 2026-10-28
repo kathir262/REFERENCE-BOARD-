@@ -208,16 +208,16 @@ class FloatingOverlayService : Service() {
 
         // Reference Mode Toolbar
         overlayView.findViewById<View>(R.id.btn_pdf_ref).setOnClickListener {
-            val intent = Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            val intent = Intent(this, PickerActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 putExtra("action", "pick_pdf_ref")
             }
             startActivity(intent)
         }
 
         overlayView.findViewById<View>(R.id.btn_add_ref).setOnClickListener {
-            val intent = Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            val intent = Intent(this, PickerActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 putExtra("action", "pick_image")
             }
             startActivity(intent)
@@ -253,8 +253,8 @@ class FloatingOverlayService : Service() {
         }
 
         overlayView.findViewById<View>(R.id.btn_pdf_practice).setOnClickListener {
-            val intent = Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            val intent = Intent(this, PickerActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 putExtra("action", "pick_pdf_practice")
             }
             startActivity(intent)
@@ -345,15 +345,15 @@ class FloatingOverlayService : Service() {
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> {
-                        val intent = Intent(this, MainActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        val intent = Intent(this, PickerActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
                             putExtra("action", "pick_pdf_ref")
                         }
                         startActivity(intent)
                     }
                     1 -> {
-                        val intent = Intent(this, MainActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        val intent = Intent(this, PickerActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
                             putExtra("action", "pick_image")
                         }
                         startActivity(intent)
