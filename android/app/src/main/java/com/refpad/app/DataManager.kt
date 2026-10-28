@@ -8,21 +8,66 @@ object DataManager {
 
     var copiedBitmap: Bitmap? = null
 
-    var onNewReferenceAdded: ((Bitmap) -> Unit)? = null
-    var onPracticeImagesUpdated: (() -> Unit)? = null
+    private val referenceListeners = mutableListOf<(Bitmap) -> Unit>()
+    private val practiceListeners = mutableListOf<() -> Unit>()
 
+    @Synchronized
+    fun addReferenceListener(listener: (Bitmap) -> Unit) {
+        if (!referenceListeners.contains(listener)) {
+            referenceListeners.add(listener)
+        }
+    }
+
+    @Synchronized
+    fun removeReferenceListener(listener: (Bitmap) -> Unit) {
+        referenceListeners.remove(listener)
+    }
+
+    @Synchronized
+    fun addPracticeListener(listener: () -> Unit) {
+        if (!practiceListeners.contains(listener)) {
+            practiceListeners.add(listener)
+        }
+    }
+
+    @Synchronized
+    fun removePracticeListener(listener: () -> Unit) {
+        practiceListeners.remove(listener)
+    }
+
+    @Synchronized
     fun addReference(bitmap: Bitmap) {
         referenceImages.add(bitmap)
-        onNewReferenceAdded?.invoke(bitmap)
+        for (l in referenceListeners.toList()) {
+            try {
+                l.invoke(bitmap)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
+    @Synchronized
     fun addPracticeImages(bitmaps: List<Bitmap>) {
         practiceImages.addAll(bitmaps)
-        onPracticeImagesUpdated?.invoke()
+        for (l in practiceListeners.toList()) {
+            try {
+                l.invoke()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
+    @Synchronized
     fun clearPractice() {
         practiceImages.clear()
-        onPracticeImagesUpdated?.invoke()
+        for (l in practiceListeners.toList()) {
+            try {
+                l.invoke()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 }

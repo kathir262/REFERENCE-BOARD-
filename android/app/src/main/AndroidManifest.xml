@@ -31,10 +31,8 @@
             android:name=".PickerActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:taskAffinity=""
-            android:launchMode="singleInstance"
+            android:taskAffinity="com.refpad.picker"
             android:excludeFromRecents="true"
-            android:noHistory="true"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- Floating Overlay Service -->

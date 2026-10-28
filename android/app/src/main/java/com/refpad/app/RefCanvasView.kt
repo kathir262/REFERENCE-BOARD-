@@ -165,7 +165,7 @@ class RefCanvasView @JvmOverloads constructor(
         selectedItem = item
         items.add(item)
         onItemsCountChanged?.invoke(items.size)
-        invalidate()
+        postInvalidate()
     }
 
     fun flipSelected() {

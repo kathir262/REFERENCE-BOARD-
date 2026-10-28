@@ -647,6 +647,18 @@ class FloatingOverlayService : Service() {
         tvCountdown.text = String.format("%02d:%02d", mins, secs)
     }
 
+    private val refAddedListener: (android.graphics.Bitmap) -> Unit = { bmp ->
+        refCanvas.post {
+            refCanvas.addReferenceItem(bmp)
+        }
+    }
+
+    private val practiceUpdatedListener: () -> Unit = {
+        refCanvas.post {
+            refCanvas.setPracticeList(DataManager.practiceImages)
+        }
+    }
+
     private fun setupDataManagerSync() {
         for (bmp in DataManager.referenceImages) {
             refCanvas.addReferenceItem(bmp)
@@ -655,12 +667,8 @@ class FloatingOverlayService : Service() {
             refCanvas.setPracticeList(DataManager.practiceImages)
         }
 
-        DataManager.onNewReferenceAdded = { bmp ->
-            refCanvas.addReferenceItem(bmp)
-        }
-        DataManager.onPracticeImagesUpdated = {
-            refCanvas.setPracticeList(DataManager.practiceImages)
-        }
+        DataManager.addReferenceListener(refAddedListener)
+        DataManager.addPracticeListener(practiceUpdatedListener)
     }
 
     private fun startForegroundNotification() {
@@ -696,8 +704,8 @@ class FloatingOverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         timer?.cancel()
-        DataManager.onNewReferenceAdded = null
-        DataManager.onPracticeImagesUpdated = null
+        DataManager.removeReferenceListener(refAddedListener)
+        DataManager.removePracticeListener(practiceUpdatedListener)
         if (::overlayView.isInitialized) {
             windowManager.removeView(overlayView)
         }

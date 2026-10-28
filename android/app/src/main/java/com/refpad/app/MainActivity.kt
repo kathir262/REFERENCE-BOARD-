@@ -309,6 +309,20 @@ class MainActivity : Activity() {
         }
     }
 
+    private val refAddedListener: (Bitmap) -> Unit = { bmp ->
+        refCanvas.post {
+            refCanvas.addReferenceItem(bmp)
+            emptyStateView.visibility = View.GONE
+        }
+    }
+
+    private val practiceUpdatedListener: () -> Unit = {
+        refCanvas.post {
+            refCanvas.setPracticeList(DataManager.practiceImages)
+            emptyStateView.visibility = View.GONE
+        }
+    }
+
     private fun syncWithDataManager() {
         if (DataManager.referenceImages.isNotEmpty()) {
             for (bmp in DataManager.referenceImages) {
@@ -320,6 +334,9 @@ class MainActivity : Activity() {
             refCanvas.setPracticeList(DataManager.practiceImages)
             emptyStateView.visibility = View.GONE
         }
+
+        DataManager.addReferenceListener(refAddedListener)
+        DataManager.addPracticeListener(practiceUpdatedListener)
     }
 
     private fun loadSampleReferences() {
@@ -418,12 +435,21 @@ class MainActivity : Activity() {
 
     private fun openImagePicker(targetMode: Int) {
         pendingTargetMode = targetMode
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             type = "image/*"
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addCategory(Intent.CATEGORY_OPENABLE)
         }
-        startActivityForResult(intent, PICK_IMAGES_REQ_CODE)
+        try {
+            startActivityForResult(Intent.createChooser(intent, "Select Reference Images"), PICK_IMAGES_REQ_CODE)
+        } catch (e: Exception) {
+            val fallback = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                type = "image/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                addCategory(Intent.CATEGORY_OPENABLE)
+            }
+            startActivityForResult(fallback, PICK_IMAGES_REQ_CODE)
+        }
     }
 
     private fun openPdfPicker(targetMode: Int) {
@@ -587,10 +613,11 @@ class MainActivity : Activity() {
 
     private fun loadBitmapFromUri(uri: Uri): Bitmap? {
         return try {
+            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
+            if (bytes.isEmpty()) return null
+
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            var input: InputStream? = contentResolver.openInputStream(uri)
-            BitmapFactory.decodeStream(input, null, options)
-            input?.close()
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
 
             val maxDimension = 2048
             var inSampleSize = 1
@@ -606,10 +633,7 @@ class MainActivity : Activity() {
                 this.inSampleSize = inSampleSize
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
-            input = contentResolver.openInputStream(uri)
-            val bmp = BitmapFactory.decodeStream(input, null, loadOptions)
-            input?.close()
-            bmp
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, loadOptions)
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -619,5 +643,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         super.onDestroy()
         timer?.cancel()
+        DataManager.removeReferenceListener(refAddedListener)
+        DataManager.removePracticeListener(practiceUpdatedListener)
     }
 }

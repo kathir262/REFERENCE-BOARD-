@@ -6,7 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
-import java.io.InputStream
+import android.widget.Toast
 
 class PickerActivity : Activity() {
 
@@ -23,26 +23,51 @@ class PickerActivity : Activity() {
 
         when (currentAction) {
             "pick_image" -> {
-                val pickIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     type = "image/*"
                     putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    addCategory(Intent.CATEGORY_OPENABLE)
                 }
-                startActivityForResult(pickIntent, REQ_PICK_IMAGE)
+                try {
+                    startActivityForResult(Intent.createChooser(intent, "Select Images"), REQ_PICK_IMAGE)
+                } catch (e: Exception) {
+                    val fallback = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        type = "image/*"
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                    }
+                    startActivityForResult(fallback, REQ_PICK_IMAGE)
+                }
             }
             "pick_pdf_ref" -> {
-                val pickIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
+                val pickIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     type = "application/pdf"
+                    addCategory(Intent.CATEGORY_OPENABLE)
                 }
-                startActivityForResult(pickIntent, REQ_PICK_PDF_REF)
+                try {
+                    startActivityForResult(Intent.createChooser(pickIntent, "Select PDF"), REQ_PICK_PDF_REF)
+                } catch (e: Exception) {
+                    val fallback = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        type = "application/pdf"
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                    }
+                    startActivityForResult(fallback, REQ_PICK_PDF_REF)
+                }
             }
             "pick_pdf_practice" -> {
-                val pickIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
+                val pickIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     type = "application/pdf"
+                    addCategory(Intent.CATEGORY_OPENABLE)
                 }
-                startActivityForResult(pickIntent, REQ_PICK_PDF_PRACTICE)
+                try {
+                    startActivityForResult(Intent.createChooser(pickIntent, "Select PDF"), REQ_PICK_PDF_PRACTICE)
+                } catch (e: Exception) {
+                    val fallback = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        type = "application/pdf"
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                    }
+                    startActivityForResult(fallback, REQ_PICK_PDF_PRACTICE)
+                }
             }
             else -> finish()
         }
@@ -75,12 +100,23 @@ class PickerActivity : Activity() {
                             data.data?.let { uris.add(it) }
                         }
 
+                        val loadedBitmaps = mutableListOf<Bitmap>()
                         for (uri in uris) {
                             loadBitmapFromUri(uri)?.let { bmp ->
-                                runOnUiThread {
-                                    DataManager.addReference(bmp)
-                                }
+                                loadedBitmaps.add(bmp)
                             }
+                        }
+
+                        runOnUiThread {
+                            for (bmp in loadedBitmaps) {
+                                DataManager.addReference(bmp)
+                            }
+                            if (loadedBitmaps.isNotEmpty()) {
+                                Toast.makeText(this@PickerActivity, "Added ${loadedBitmaps.size} image(s)", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(this@PickerActivity, "Could not load selected image", Toast.LENGTH_SHORT).show()
+                            }
+                            finish()
                         }
                     }
 
@@ -91,8 +127,14 @@ class PickerActivity : Activity() {
                                 for (page in pages) {
                                     DataManager.addReference(page)
                                 }
+                                if (pages.isNotEmpty()) {
+                                    Toast.makeText(this@PickerActivity, "Loaded ${pages.size} PDF page(s)", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(this@PickerActivity, "Could not load PDF pages", Toast.LENGTH_SHORT).show()
+                                }
+                                finish()
                             }
-                        }
+                        } ?: runOnUiThread { finish() }
                     }
 
                     REQ_PICK_PDF_PRACTICE -> {
@@ -100,15 +142,19 @@ class PickerActivity : Activity() {
                             val pages = PdfHelper.renderPdfPages(this@PickerActivity, uri)
                             runOnUiThread {
                                 DataManager.addPracticeImages(pages)
+                                if (pages.isNotEmpty()) {
+                                    Toast.makeText(this@PickerActivity, "Loaded ${pages.size} pages to Practice Mode", Toast.LENGTH_SHORT).show()
+                                }
+                                finish()
                             }
-                        }
+                        } ?: runOnUiThread { finish() }
                     }
+                    else -> runOnUiThread { finish() }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-            } finally {
                 runOnUiThread {
-                    // Instantly finish so user stays right in their drawing app!
+                    Toast.makeText(this@PickerActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
                     finish()
                 }
             }
@@ -117,10 +163,11 @@ class PickerActivity : Activity() {
 
     private fun loadBitmapFromUri(uri: Uri): Bitmap? {
         return try {
+            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
+            if (bytes.isEmpty()) return null
+
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            var input: InputStream? = contentResolver.openInputStream(uri)
-            BitmapFactory.decodeStream(input, null, options)
-            input?.close()
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
 
             val maxDimension = 2048
             var inSampleSize = 1
@@ -136,10 +183,7 @@ class PickerActivity : Activity() {
                 this.inSampleSize = inSampleSize
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
-            input = contentResolver.openInputStream(uri)
-            val bmp = BitmapFactory.decodeStream(input, null, loadOptions)
-            input?.close()
-            bmp
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, loadOptions)
         } catch (e: Exception) {
             e.printStackTrace()
             null
