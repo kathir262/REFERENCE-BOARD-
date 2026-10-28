@@ -15,23 +15,32 @@ class PickerActivity : Activity() {
     private val REQ_PICK_PDF_PRACTICE = 1003
 
     private var currentAction: String? = null
+    private var pickerLaunched = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         overridePendingTransition(0, 0)
+
+        if (savedInstanceState != null && savedInstanceState.getBoolean("picker_launched", false)) {
+            pickerLaunched = true
+            return
+        }
+
         currentAction = intent.getStringExtra("action")
+        pickerLaunched = true
 
         when (currentAction) {
             "pick_image" -> {
-                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
                     type = "image/*"
                     putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                    addCategory(Intent.CATEGORY_OPENABLE)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                 }
                 try {
-                    startActivityForResult(Intent.createChooser(intent, "Select Images"), REQ_PICK_IMAGE)
+                    startActivityForResult(intent, REQ_PICK_IMAGE)
                 } catch (e: Exception) {
-                    val fallback = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    val fallback = Intent(Intent.ACTION_GET_CONTENT).apply {
                         type = "image/*"
                         putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                         addCategory(Intent.CATEGORY_OPENABLE)
@@ -40,14 +49,15 @@ class PickerActivity : Activity() {
                 }
             }
             "pick_pdf_ref" -> {
-                val pickIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                    type = "application/pdf"
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/pdf"
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                 }
                 try {
-                    startActivityForResult(Intent.createChooser(pickIntent, "Select PDF"), REQ_PICK_PDF_REF)
+                    startActivityForResult(intent, REQ_PICK_PDF_REF)
                 } catch (e: Exception) {
-                    val fallback = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    val fallback = Intent(Intent.ACTION_GET_CONTENT).apply {
                         type = "application/pdf"
                         addCategory(Intent.CATEGORY_OPENABLE)
                     }
@@ -55,14 +65,15 @@ class PickerActivity : Activity() {
                 }
             }
             "pick_pdf_practice" -> {
-                val pickIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                    type = "application/pdf"
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/pdf"
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                 }
                 try {
-                    startActivityForResult(Intent.createChooser(pickIntent, "Select PDF"), REQ_PICK_PDF_PRACTICE)
+                    startActivityForResult(intent, REQ_PICK_PDF_PRACTICE)
                 } catch (e: Exception) {
-                    val fallback = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    val fallback = Intent(Intent.ACTION_GET_CONTENT).apply {
                         type = "application/pdf"
                         addCategory(Intent.CATEGORY_OPENABLE)
                     }
@@ -71,6 +82,11 @@ class PickerActivity : Activity() {
             }
             else -> finish()
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean("picker_launched", pickerLaunched)
     }
 
     override fun finish() {
@@ -84,6 +100,21 @@ class PickerActivity : Activity() {
         if (resultCode != RESULT_OK || data == null) {
             finish()
             return
+        }
+
+        // Take persistable URI permissions where available
+        data.data?.let { uri ->
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: Exception) {}
+        }
+        val clip = data.clipData
+        if (clip != null) {
+            for (i in 0 until clip.itemCount) {
+                try {
+                    contentResolver.takePersistableUriPermission(clip.getItemAt(i).uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (e: Exception) {}
+            }
         }
 
         Thread {
@@ -112,9 +143,9 @@ class PickerActivity : Activity() {
                                 DataManager.addReference(bmp)
                             }
                             if (loadedBitmaps.isNotEmpty()) {
-                                Toast.makeText(this@PickerActivity, "Added ${loadedBitmaps.size} image(s)", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(applicationContext, "Added ${loadedBitmaps.size} reference image(s)", Toast.LENGTH_SHORT).show()
                             } else {
-                                Toast.makeText(this@PickerActivity, "Could not load selected image", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(applicationContext, "Could not load selected image", Toast.LENGTH_SHORT).show()
                             }
                             finish()
                         }
@@ -128,9 +159,9 @@ class PickerActivity : Activity() {
                                     DataManager.addReference(page)
                                 }
                                 if (pages.isNotEmpty()) {
-                                    Toast.makeText(this@PickerActivity, "Loaded ${pages.size} PDF page(s)", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(applicationContext, "Loaded ${pages.size} PDF page(s)", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(this@PickerActivity, "Could not load PDF pages", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(applicationContext, "Could not load PDF pages", Toast.LENGTH_SHORT).show()
                                 }
                                 finish()
                             }
@@ -143,7 +174,9 @@ class PickerActivity : Activity() {
                             runOnUiThread {
                                 DataManager.addPracticeImages(pages)
                                 if (pages.isNotEmpty()) {
-                                    Toast.makeText(this@PickerActivity, "Loaded ${pages.size} pages to Practice Mode", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(applicationContext, "Loaded ${pages.size} pages to Practice Mode", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(applicationContext, "Could not load PDF pages", Toast.LENGTH_SHORT).show()
                                 }
                                 finish()
                             }
@@ -154,7 +187,7 @@ class PickerActivity : Activity() {
             } catch (e: Exception) {
                 e.printStackTrace()
                 runOnUiThread {
-                    Toast.makeText(this@PickerActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(applicationContext, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
                     finish()
                 }
             }
@@ -162,14 +195,26 @@ class PickerActivity : Activity() {
     }
 
     private fun loadBitmapFromUri(uri: Uri): Bitmap? {
-        return try {
-            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
-            if (bytes.isEmpty()) return null
+        val bytes = try {
+            contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        } catch (e: Exception) {
+            try {
+                contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                    java.io.FileInputStream(pfd.fileDescriptor).use { it.readBytes() }
+                }
+            } catch (e2: Exception) {
+                e2.printStackTrace()
+                null
+            }
+        } ?: return null
 
+        if (bytes.isEmpty()) return null
+
+        try {
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
 
-            val maxDimension = 2048
+            val maxDimension = 1600
             var inSampleSize = 1
             if (options.outHeight > maxDimension || options.outWidth > maxDimension) {
                 val halfHeight = options.outHeight / 2
@@ -183,10 +228,21 @@ class PickerActivity : Activity() {
                 this.inSampleSize = inSampleSize
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, loadOptions)
+            return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, loadOptions)
+        } catch (oom: OutOfMemoryError) {
+            oom.printStackTrace()
+            val fallbackOptions = BitmapFactory.Options().apply {
+                inSampleSize = 4
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            return try {
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, fallbackOptions)
+            } catch (e: Throwable) {
+                null
+            }
         } catch (e: Exception) {
             e.printStackTrace()
-            null
+            return null
         }
     }
 }
