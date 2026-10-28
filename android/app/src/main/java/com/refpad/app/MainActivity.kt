@@ -455,7 +455,7 @@ class MainActivity : Activity() {
         } else {
             startService(intent)
         }
-        moveTaskToBack(true)
+        finish()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

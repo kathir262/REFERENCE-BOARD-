@@ -26,11 +26,15 @@
             </intent-filter>
         </activity>
 
-        <!-- Transparent Picker Trampoline for Floating Overlay (Returns directly to Drawing App!) -->
+        <!-- Completely independent transparent trampoline activity for floating overlay -->
         <activity
             android:name=".PickerActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:taskAffinity=""
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- Floating Overlay Service -->

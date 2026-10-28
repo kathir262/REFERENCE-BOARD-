@@ -6,7 +6,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
-import android.widget.Toast
 import java.io.InputStream
 
 class PickerActivity : Activity() {
@@ -19,6 +18,7 @@ class PickerActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        overridePendingTransition(0, 0)
         currentAction = intent.getStringExtra("action")
 
         when (currentAction) {
@@ -46,6 +46,11 @@ class PickerActivity : Activity() {
             }
             else -> finish()
         }
+    }
+
+    override fun finish() {
+        super.finish()
+        overridePendingTransition(0, 0)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -77,9 +82,6 @@ class PickerActivity : Activity() {
                                 }
                             }
                         }
-                        runOnUiThread {
-                            Toast.makeText(this@PickerActivity, "Added ${uris.size} reference image(s)", Toast.LENGTH_SHORT).show()
-                        }
                     }
 
                     REQ_PICK_PDF_REF -> {
@@ -89,7 +91,6 @@ class PickerActivity : Activity() {
                                 for (page in pages) {
                                     DataManager.addReference(page)
                                 }
-                                Toast.makeText(this@PickerActivity, "Loaded ${pages.size} PDF pages", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -99,7 +100,6 @@ class PickerActivity : Activity() {
                             val pages = PdfHelper.renderPdfPages(this@PickerActivity, uri)
                             runOnUiThread {
                                 DataManager.addPracticeImages(pages)
-                                Toast.makeText(this@PickerActivity, "Loaded ${pages.size} PDF poses for Practice", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -108,7 +108,7 @@ class PickerActivity : Activity() {
                 e.printStackTrace()
             } finally {
                 runOnUiThread {
-                    // Seamlessly finish so artist immediately returns to their drawing app!
+                    // Instantly finish so user stays right in their drawing app!
                     finish()
                 }
             }
