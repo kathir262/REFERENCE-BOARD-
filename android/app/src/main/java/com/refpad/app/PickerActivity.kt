@@ -4,8 +4,11 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.widget.Toast
 
 class PickerActivity : Activity() {
@@ -31,16 +34,22 @@ class PickerActivity : Activity() {
 
         when (currentAction) {
             "pick_image" -> {
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "image/*"
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+                        type = "image/*"
+                        putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 20)
+                    }
+                } else {
+                    Intent(Intent.ACTION_GET_CONTENT).apply {
+                        type = "image/*"
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                    }
                 }
                 try {
                     startActivityForResult(intent, REQ_PICK_IMAGE)
                 } catch (e: Exception) {
-                    val fallback = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    val fallback = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                         type = "image/*"
                         putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                         addCategory(Intent.CATEGORY_OPENABLE)
@@ -52,7 +61,6 @@ class PickerActivity : Activity() {
                 val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = "application/pdf"
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                 }
                 try {
                     startActivityForResult(intent, REQ_PICK_PDF_REF)
@@ -68,7 +76,6 @@ class PickerActivity : Activity() {
                 val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = "application/pdf"
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                 }
                 try {
                     startActivityForResult(intent, REQ_PICK_PDF_PRACTICE)
@@ -102,35 +109,27 @@ class PickerActivity : Activity() {
             return
         }
 
-        // Take persistable URI permissions where available
-        data.data?.let { uri ->
-            try {
-                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } catch (e: Exception) {}
-        }
-        val clip = data.clipData
-        if (clip != null) {
-            for (i in 0 until clip.itemCount) {
-                try {
-                    contentResolver.takePersistableUriPermission(clip.getItemAt(i).uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                } catch (e: Exception) {}
+        // Extract all URIs from both data.data and data.clipData
+        val uris = mutableListOf<Uri>()
+        data.data?.let { uris.add(it) }
+        data.clipData?.let { clipData ->
+            for (i in 0 until clipData.itemCount) {
+                val u = clipData.getItemAt(i).uri
+                if (!uris.contains(u)) uris.add(u)
             }
+        }
+
+        // Take persistable URI permissions if offered
+        for (u in uris) {
+            try {
+                contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: Exception) {}
         }
 
         Thread {
             try {
                 when (requestCode) {
                     REQ_PICK_IMAGE -> {
-                        val uris = mutableListOf<Uri>()
-                        val clipData = data.clipData
-                        if (clipData != null) {
-                            for (i in 0 until clipData.itemCount) {
-                                uris.add(clipData.getItemAt(i).uri)
-                            }
-                        } else {
-                            data.data?.let { uris.add(it) }
-                        }
-
                         val loadedBitmaps = mutableListOf<Bitmap>()
                         for (uri in uris) {
                             loadBitmapFromUri(uri)?.let { bmp ->
@@ -143,7 +142,7 @@ class PickerActivity : Activity() {
                                 DataManager.addReference(bmp)
                             }
                             if (loadedBitmaps.isNotEmpty()) {
-                                Toast.makeText(applicationContext, "Added ${loadedBitmaps.size} reference image(s)", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(applicationContext, "Added ${loadedBitmaps.size} image(s)", Toast.LENGTH_SHORT).show()
                             } else {
                                 Toast.makeText(applicationContext, "Could not load selected image", Toast.LENGTH_SHORT).show()
                             }
@@ -152,19 +151,9 @@ class PickerActivity : Activity() {
                     }
 
                     REQ_PICK_PDF_REF -> {
-                        val uris = mutableListOf<Uri>()
-                        data.data?.let { uris.add(it) }
-                        data.clipData?.let { clipData ->
-                            for (i in 0 until clipData.itemCount) {
-                                val u = clipData.getItemAt(i).uri
-                                if (!uris.contains(u)) uris.add(u)
-                            }
-                        }
-
                         val loadedPages = mutableListOf<Bitmap>()
                         for (uri in uris) {
-                            val pages = PdfHelper.renderPdfPages(this@PickerActivity, uri)
-                            loadedPages.addAll(pages)
+                            loadedPages.addAll(PdfHelper.renderPdfPages(this@PickerActivity, uri))
                         }
 
                         runOnUiThread {
@@ -181,19 +170,9 @@ class PickerActivity : Activity() {
                     }
 
                     REQ_PICK_PDF_PRACTICE -> {
-                        val uris = mutableListOf<Uri>()
-                        data.data?.let { uris.add(it) }
-                        data.clipData?.let { clipData ->
-                            for (i in 0 until clipData.itemCount) {
-                                val u = clipData.getItemAt(i).uri
-                                if (!uris.contains(u)) uris.add(u)
-                            }
-                        }
-
                         val loadedPages = mutableListOf<Bitmap>()
                         for (uri in uris) {
-                            val pages = PdfHelper.renderPdfPages(this@PickerActivity, uri)
-                            loadedPages.addAll(pages)
+                            loadedPages.addAll(PdfHelper.renderPdfPages(this@PickerActivity, uri))
                         }
 
                         runOnUiThread {
@@ -219,6 +198,25 @@ class PickerActivity : Activity() {
     }
 
     private fun loadBitmapFromUri(uri: Uri): Bitmap? {
+        // Try ImageDecoder on Android 28+ for hardware-assisted, zero-fail decode
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            try {
+                val source = ImageDecoder.createSource(contentResolver, uri)
+                return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                    val maxDim = 1600
+                    val size = info.size
+                    if (size.width > maxDim || size.height > maxDim) {
+                        val ratio = maxDim.toFloat() / Math.max(size.width, size.height)
+                        decoder.setTargetSize(Math.max(1, (size.width * ratio).toInt()), Math.max(1, (size.height * ratio).toInt()))
+                    }
+                }
+            } catch (e: Throwable) {
+                e.printStackTrace()
+            }
+        }
+
+        // Stream byte buffer fallback
         val bytes = try {
             contentResolver.openInputStream(uri)?.use { it.readBytes() }
         } catch (e: Exception) {
@@ -255,15 +253,7 @@ class PickerActivity : Activity() {
             return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, loadOptions)
         } catch (oom: OutOfMemoryError) {
             oom.printStackTrace()
-            val fallbackOptions = BitmapFactory.Options().apply {
-                inSampleSize = 4
-                inPreferredConfig = Bitmap.Config.RGB_565
-            }
-            return try {
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, fallbackOptions)
-            } catch (e: Throwable) {
-                null
-            }
+            return null
         } catch (e: Exception) {
             e.printStackTrace()
             return null

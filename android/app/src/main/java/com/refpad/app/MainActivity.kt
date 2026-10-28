@@ -3,13 +3,16 @@ package com.refpad.app
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.provider.Settings
 import android.view.View
 import android.widget.Button
@@ -59,8 +62,21 @@ class MainActivity : Activity() {
         setupPracticeHUD()
         setupLongPressMenus()
         syncWithDataManager()
+        checkStoragePermissions()
 
         handleIncomingIntent(intent)
+    }
+
+    private fun checkStoragePermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.READ_MEDIA_IMAGES), 101)
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE), 101)
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -435,16 +451,22 @@ class MainActivity : Activity() {
 
     private fun openImagePicker(targetMode: Int) {
         pendingTargetMode = targetMode
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "image/*"
-            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+                type = "image/*"
+                putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 20)
+            }
+        } else {
+            Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "image/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                addCategory(Intent.CATEGORY_OPENABLE)
+            }
         }
         try {
             startActivityForResult(intent, PICK_IMAGES_REQ_CODE)
         } catch (e: Exception) {
-            val fallback = Intent(Intent.ACTION_GET_CONTENT).apply {
+            val fallback = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 type = "image/*"
                 putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                 addCategory(Intent.CATEGORY_OPENABLE)
@@ -632,6 +654,23 @@ class MainActivity : Activity() {
     }
 
     private fun loadBitmapFromUri(uri: Uri): Bitmap? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            try {
+                val source = ImageDecoder.createSource(contentResolver, uri)
+                return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                    val maxDim = 1600
+                    val size = info.size
+                    if (size.width > maxDim || size.height > maxDim) {
+                        val ratio = maxDim.toFloat() / Math.max(size.width, size.height)
+                        decoder.setTargetSize(Math.max(1, (size.width * ratio).toInt()), Math.max(1, (size.height * ratio).toInt()))
+                    }
+                }
+            } catch (e: Throwable) {
+                e.printStackTrace()
+            }
+        }
+
         val bytes = try {
             contentResolver.openInputStream(uri)?.use { it.readBytes() }
         } catch (e: Exception) {
