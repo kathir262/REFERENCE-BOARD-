@@ -19,11 +19,14 @@ from refpad.ui import theme
 
 
 def _server_name() -> str:
+    """One RefPad per Windows user and data folder (a copy using a different data folder runs separately)."""
+    from refpad import paths
     try:
         user = getpass.getuser()
     except Exception:
         user = "user"
-    return "RefPad-" + hashlib.sha1(user.encode("utf-8", "replace")).hexdigest()[:12]
+    key = f"{user}|{os.path.normcase(str(paths.DATA))}"
+    return "RefPad-" + hashlib.sha1(key.encode("utf-8", "replace")).hexdigest()[:12]
 
 
 def _send_to_running(paths) -> bool:

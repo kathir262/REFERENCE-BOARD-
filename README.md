@@ -1,5 +1,9 @@
 # RefPad: Reference Board
 
+<p align="center">
+  <img src="play-store/feature-graphic-1024x500.png" alt="RefPad: reference board, gesture practice and PDF reader" width="760">
+</p>
+
 A free reference companion for artists, for **Windows** and **Android**:
 
 - **Reference board** – an endless board for pictures and PDF pages. Move, resize, flip, rotate, black & white, copy and paste. Saved automatically.
@@ -8,6 +12,32 @@ A free reference companion for artists, for **Windows** and **Android**:
 - **Float on top** – a small window that stays above your drawing app (Clip Studio Paint, Krita, Photoshop, ibisPaint, Infinite Painter…), with adjustable see-through.
 
 Free, no ads, no accounts, no tracking. See the [privacy policy](docs/privacy-policy.html).
+
+## Screenshots
+
+### Windows
+
+![The reference board on Windows](docs/images/windows-board.jpg)
+
+| Timed gesture practice | PDF reader |
+|---|---|
+| ![Gesture practice with a countdown](docs/images/windows-practice.jpg) | ![The PDF reader showing an art book](docs/images/windows-pdf.jpg) |
+
+<img src="docs/images/windows-float.jpg" alt="The small floating window that stays on top of other apps" width="240" align="right">
+
+**Float on top** – press the float button (or `Ctrl+T`) and RefPad becomes a small window that stays above your drawing app. Switch between board, practice and PDF, make it see-through, and drag or resize it wherever it fits. Press the button again to go back to the full window.
+
+<br clear="right">
+
+### Android
+
+<p align="center">
+  <img src="play-store/screenshots/phone-1-board.png" alt="Board on a phone" width="250">
+  <img src="play-store/screenshots/phone-2-practice.png" alt="Practice on a phone" width="250">
+  <img src="play-store/screenshots/phone-3-pdf-reader.png" alt="PDF reader on a phone" width="250">
+</p>
+
+The pictures shown are public-domain works from The Metropolitan Museum of Art and the Art Institute of Chicago (see [play-store/CREDITS.md](play-store/CREDITS.md)).
 
 ---
 
