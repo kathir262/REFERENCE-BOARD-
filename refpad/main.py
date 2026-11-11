@@ -108,6 +108,7 @@ def start(argv):
     timer = PracticeTimer(state)
     imp = importer.init_importer(state, engine)
     updater.cleanup_leftovers()
+    updater.refresh_install_record()
 
     win = MainWindow(state, timer, engine, imp)
     win.show_initial()

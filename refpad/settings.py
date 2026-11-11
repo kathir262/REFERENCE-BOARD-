@@ -14,6 +14,7 @@ DEFAULTS = {
     "auto_update": True,       # check GitHub for a new version at most once a day
     "last_update_check": 0.0,
     "skip_version": "",
+    "recent_boards": [],       # board files, most recent first
 }
 
 

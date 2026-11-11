@@ -13,17 +13,21 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPoint, QRect, Qt, QTimer
 from PySide6.QtGui import QAction, QIcon, QImage, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel, QSizeGrip, QStackedWidget, QToolButton,
+from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QHBoxLayout, QLabel, QPushButton, QSizeGrip,
+                               QStackedWidget, QToolButton,
                                QVBoxLayout, QWidget)
 
 from refpad import __version__, paths
 from refpad.core import images, updater
-from refpad.core.importer import BOARD_PDF_MAX_PAGES, split_paths
+from refpad.core import boards
+from refpad.core.importer import split_paths
 from refpad.core.store import BOARD, INTERVALS, PDF, PRACTICE
 from refpad.core.timer import clock, interval_label
 from refpad.settings import settings
 from refpad.ui import theme
+from refpad.ui.board_files import BoardFiles
 from refpad.ui.board_view import BoardView
+from refpad.ui.pdf_pages import PdfPagesDialog
 from refpad.ui.dialogs import AboutDialog, UpdateDialog
 from refpad.ui.pdf_view import PdfView
 from refpad.ui.practice_view import PracticeView
@@ -72,6 +76,7 @@ class MainWindow(QWidget):
         self.setAcceptDrops(True)
         self.setMouseTracking(True)
         self.setMinimumSize(340, 300)
+        self.files = BoardFiles(self, state)
         self._build_actions()
         self._build_ui()
         self._connect()
@@ -92,7 +97,11 @@ class MainWindow(QWidget):
         A = self._act
         # Board
         self.a_image = A("Image", "image", lambda: self.pick_images(BOARD), "Ctrl+I", "Add images to the board", accent=True)
-        self.a_pdf = A("PDF", "pdf", lambda: self.pick_pdf(PDF if self.state.mode == PDF else None), "Ctrl+O", "Open a PDF", accent=True)
+        self.a_pdf = A("PDF", "pdf", lambda: self.pick_pdf(None), tip="Add a PDF", accent=True)
+        self.a_open_any = A("Open", "folder", self.open_any, "Ctrl+O", "Open a board (or a PDF in the PDF reader)")
+        self.a_new_board = A("New board", "add", lambda: self.files.new_board(), "Ctrl+N")
+        self.a_save = A("Save board", "copy", lambda: self.files.save(), "Ctrl+S")
+        self.a_save_as = A("Save board as…", "copy", lambda: self.files.save_as(), "Ctrl+Shift+S")
         self.a_flip = A("Flip", "flip", self.flip_selected, "H", "Flip horizontally", checkable=True)
         self.a_bw = A("B&W", "bw", self.bw_selected, "G", "Black & white", checkable=True)
         self.a_rotate = A("Rotate", "rotate", lambda: self.rotate_selected(1), "R", "Rotate right")
@@ -156,7 +165,9 @@ class MainWindow(QWidget):
         self.logo = logo = QLabel()
         logo.setPixmap(QPixmap(str(paths.resource("refpad/assets/icon-128.png"))).scaled(
             30, 30, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        self.title = QLabel("RefPad", objectName="AppTitle")
+        self.title = QPushButton("Untitled board", objectName="BoardName")
+        self.title.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.title.setToolTip("Boards: new, open, save, recent")
         self.segments = Segments(compact=False)
         self.hud = Hud(compact=False)
         self.btn_add = IconButton("add", "Add images or PDFs", 40, theme.ACCENT)
@@ -284,7 +295,7 @@ class MainWindow(QWidget):
         bar = None if self.float_mode else self.bars.get(self.state.mode)
         pad_bottom = 0
         for m, b in self.bars.items():
-            if b is not bar and b.isVisible():
+            if b is not bar and not b.isHidden():
                 b.hide()
         if bar is not None:
             bw = bar.fit(max(200, w - 16))
@@ -297,7 +308,7 @@ class MainWindow(QWidget):
         self.board.pad_bottom = pad_bottom
         self.practice.pad_bottom = pad_bottom
         self.pdf.set_padding(0, pad_bottom)
-        if self.empty.isVisible():
+        if not self.empty.isHidden():
             self.empty.place(w, h, 0, pad_bottom)
         self.chip.reposition()
 
@@ -405,6 +416,9 @@ class MainWindow(QWidget):
         self.btn_float.clicked.connect(self.toggle_float)
         self.btn_full.clicked.connect(self.toggle_float)
         self.btn_menu.clicked.connect(lambda: self.show_main_menu(self.btn_menu))
+        self.title.clicked.connect(lambda: self.show_boards_menu(self.title))
+        self.state.boardFileChanged.connect(self._sync_title)
+        self.state.task.connect(lambda text, stop: self.chip.show_message(text, True, stop, "STOP"))
         self.btn_menu_c.clicked.connect(lambda: self.show_main_menu(self.btn_menu_c))
         self.btn_opacity.clicked.connect(self.cycle_opacity)
         self.btn_min.clicked.connect(self.showMinimized)
@@ -514,12 +528,7 @@ class MainWindow(QWidget):
 
     def _sync_pdf(self):
         st = self.state
-        doc = st.doc
-        title = "RefPad"
-        if st.mode == PDF and doc is not None:
-            title = f"{doc.title} – RefPad"
-        if self.windowTitle() != title:
-            self.setWindowTitle(title)
+        self._sync_title()
         text = f"{self.pdf.current_page + 1} / {self.pdf.page_count}" if self.pdf.ready else ""
         for lab in (self.page_label, self.page_label_c):
             if lab.text() != text:
@@ -536,7 +545,9 @@ class MainWindow(QWidget):
         mode = st.mode
         show = (mode == BOARD and not st.items) or (mode == PRACTICE and not st.practice) or (mode == PDF and st.doc is None)
         if not show:
-            if self.empty.isVisible():
+            # isHidden, not isVisible: before the window is first shown nothing counts as visible,
+            # so the card would stay un-hidden and appear blank over a full board.
+            if not self.empty.isHidden():
                 self.empty.hide()
             return
         compact = self.float_mode
@@ -546,8 +557,8 @@ class MainWindow(QWidget):
                 "Add pictures or a PDF art book, then keep the board floating on top of your drawing app.",
                 ("Add images", lambda: self.pick_images(BOARD)), ("Open PDF", lambda: self.pick_pdf(None)),
                 None if compact else ("Import folder", lambda: self.pick_folder(BOARD)),
-                ("Paste an image  (Ctrl+V)", self.paste),
-                "" if compact else "Drop pictures, PDFs or folders anywhere · Scroll to zoom · Drag empty space to move · Double-click to fit")
+                ("Open a saved board", self.files.open_dialog),
+                "" if compact else "Drop pictures, PDFs or folders anywhere · Ctrl+V to paste · Scroll to zoom · Double-click to fit")
         elif mode == PRACTICE:
             link = ("Use board images", lambda: self.importer.board_to_practice(st.items)) if st.items else ("Back to the board", lambda: st.set_mode(BOARD))
             self.empty.set_content(
@@ -676,7 +687,7 @@ class MainWindow(QWidget):
         elif target == PRACTICE:
             self.importer.pdf_to_practice(path)
         elif target == BOARD:
-            self.importer.pdf_to_board(path)
+            self.choose_pdf_pages(path)
         else:
             self.ask_pdf_destination(path, at)
 
@@ -685,10 +696,16 @@ class MainWindow(QWidget):
         header(m, f"Open “{Path(path).stem}” in")
         item(m, "PDF reader", "pdf", lambda: self.importer.pdf_to_reader(path))
         item(m, "Practice (every page)", "timer", lambda: self.importer.pdf_to_practice(path))
-        item(m, f"Board (first {BOARD_PDF_MAX_PAGES} pages)", "image", lambda: self.importer.pdf_to_board(path))
+        item(m, "Board (choose pages)", "image", lambda: self.choose_pdf_pages(path))
         m.exec(at or self._menu_point())
 
     def open_paths(self, paths_, at: QPoint = None):
+        board_files = [p for p in paths_ if boards.is_board_file(p) and os.path.isfile(p)]
+        if board_files:
+            self.files.open(board_files[0])
+            paths_ = [p for p in paths_ if p not in board_files]
+            if not paths_:
+                return
         imgs, pdfs, folders = split_paths(paths_)
         to_practice = self.state.mode == PRACTICE
         if imgs:
@@ -713,7 +730,8 @@ class MainWindow(QWidget):
         md = e.mimeData()
         local = [u.toLocalFile() for u in md.urls() if u.isLocalFile()] if md.hasUrls() else []
         if local:
-            QTimer.singleShot(0, lambda: self.open_paths(local, e.position().toPoint() + self.mapToGlobal(QPoint(0, 0))))
+            at = self.mapToGlobal(e.position().toPoint())   # read now: the drop event is gone after this method
+            QTimer.singleShot(0, lambda: self.open_paths(local, at))
         elif md.hasImage():
             img = QImage(md.imageData())
             if self.state.mode == PRACTICE:
@@ -721,6 +739,47 @@ class MainWindow(QWidget):
             else:
                 self.importer.qimages_to_board([img])
         e.acceptProposedAction()
+
+    # ================================================================== boards & PDF pages
+
+    def open_any(self):
+        """Ctrl+O: a board on the Board tab, a PDF on the other tabs."""
+        mode = self.state.mode
+        if mode == BOARD:
+            self.files.open_dialog()
+        else:
+            self.pick_pdf(mode)
+
+    def show_boards_menu(self, anchor):
+        m = menu(self)
+        self.files.fill_menu(m)
+        m.exec(anchor.mapToGlobal(QPoint(0, anchor.height() + 4)))
+
+    def _sync_title(self):
+        st = self.state
+        unsaved = st.board_dirty and bool(st.items)
+        name = st.board_name + ("  •" if unsaved else "")
+        if self.title.text() != name:
+            self.title.setText(name)
+            self.title.setToolTip(("Not saved yet. " if unsaved else "") + "Boards: new, open, save, recent")
+        doc = st.doc
+        if st.mode == PDF and doc is not None:
+            title = f"{doc.title} – RefPad"
+        else:
+            title = f"{st.board_name}{' •' if unsaved else ''} – RefPad"
+        if self.windowTitle() != title:
+            self.setWindowTitle(title)
+        self._fit_headers()
+
+    def choose_pdf_pages(self, path: str, preselect=None):
+        """Lets you pick which pages of a PDF go to the board (all, page numbers, or by clicking)."""
+        def go(info):
+            self.chip.fade_out()
+            dlg = PdfPagesDialog(self, path, info.count, self.engine, preselect)
+            if dlg.exec() == QDialog.DialogCode.Accepted and dlg.pages:
+                self.state.set_mode(BOARD)
+                self.importer.pdf_pages_to_board(path, dlg.pages)
+        self.importer.with_info(path, go)
 
     # ================================================================== menus
 
@@ -754,7 +813,7 @@ class MainWindow(QWidget):
         m = menu(self)
         header(m, "Add to board")
         item(m, "Images", "image", lambda: self.pick_images(BOARD))
-        item(m, f"PDF pages (first {BOARD_PDF_MAX_PAGES})", "pdf", lambda: self.pick_pdf(BOARD))
+        item(m, "PDF pages", "pdf", lambda: self.pick_pdf(BOARD))
         item(m, "Folder of images", "folder", lambda: self.pick_folder(BOARD))
         header(m, "Add to practice")
         item(m, "PDF art book (every page)", "pdf", lambda: self.pick_pdf(PRACTICE))
@@ -769,6 +828,7 @@ class MainWindow(QWidget):
         st = self.state
         m = menu(self)
         if st.mode == BOARD:
+            self.files.fill_menu(m)
             self._fill_board_menu(m)
         elif st.mode == PRACTICE:
             self._fill_practice_menu(m)
@@ -794,7 +854,7 @@ class MainWindow(QWidget):
         header(m, "Board")
         item(m, "Paste", "paste", self.paste, shortcut="Ctrl+V")
         item(m, "Add images", "image", lambda: self.pick_images(BOARD), shortcut="Ctrl+I")
-        item(m, f"Add PDF pages (first {BOARD_PDF_MAX_PAGES})", "pdf", lambda: self.pick_pdf(BOARD))
+        item(m, "Add PDF pages…", "pdf", lambda: self.pick_pdf(BOARD))
         item(m, "Import folder", "folder", lambda: self.pick_folder(BOARD))
         item(m, "Fit everything", "fit", self.board.fit_all, enabled=has, shortcut="F")
         item(m, "Arrange in rows", "arrange", self.arrange, enabled=has, shortcut="Ctrl+Shift+A")
@@ -862,6 +922,7 @@ class MainWindow(QWidget):
         item(m, "Open another PDF…", "pdf", lambda: self.pick_pdf(PDF))
         if doc is not None and self.pdf.ready:
             item(m, f"Add page {page + 1} to the board", "image", lambda: self.page_to_board(page))
+            item(m, "Add pages to the board…", "image", lambda: self.choose_pdf_pages(doc.path, [page]))
             item(m, f"Practise from page {page + 1}", "timer", lambda: self.practise_from(page))
             item(m, self.pdf.fit_label(), "fit", self.pdf.toggle_fit, shortcut="F")
             item(m, "Go to first page", "page_up", lambda: self.pdf.go_to_page(0), shortcut="Home")
@@ -1071,6 +1132,7 @@ class MainWindow(QWidget):
 
     def closeEvent(self, e):
         self._save_geometry()
+        self.files.save_now_if_needed()
         self.pdf._remember()
         self.state.save_now()
         super().closeEvent(e)
@@ -1085,6 +1147,7 @@ class MainWindow(QWidget):
 
     def _before_restart(self):
         self._save_geometry()
+        self.files.save_now_if_needed()
         self.pdf._remember()
         self.state.save_now()
 

@@ -19,6 +19,8 @@ if not errorlevel 1 (
 echo Removing RefPad...
 powershell -NoProfile -Command "foreach ($dir in @([Environment]::GetFolderPath('Programs'), [Environment]::GetFolderPath('Desktop'))) { Remove-Item -LiteralPath (Join-Path $dir 'RefPad.lnk') -ErrorAction SilentlyContinue }"
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\RefPad" /f >nul 2>&1
+reg delete "HKCU\Software\Classes\RefPad.Board" /f >nul 2>&1
+reg query "HKCU\Software\Classes\.refpad" /ve 2>nul | find "RefPad.Board" >nul && reg delete "HKCU\Software\Classes\.refpad" /f >nul 2>&1
 rmdir /s /q "%APP%_internal"
 del /q "%APP%RefPad.exe" "%APP%Install RefPad.cmd" 2>nul
 

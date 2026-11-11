@@ -93,6 +93,8 @@ QToolTip {{ background: {RAISED}; color: {TEXT}; border: 1px solid {STROKE_STRON
 #TopBar {{ background: {SURFACE}; border-bottom: 1px solid {STROKE}; }}
 #FloatHeader {{ background: {SURFACE}; border-bottom: 1px solid {STROKE}; }}
 #AppTitle {{ font-size: 15px; font-weight: 700; color: {TEXT}; padding-right: 6px; }}
+QPushButton#BoardName {{ background: transparent; border: none; border-radius: 10px; color: {TEXT}; font-size: 15px; font-weight: 700; padding: 6px 10px; text-align: left; }}
+QPushButton#BoardName:hover {{ background: {RAISED}; }}
 
 QPushButton[segment="true"] {{
     background: transparent; color: {TEXT_2}; border: 1px solid {STROKE_STRONG};

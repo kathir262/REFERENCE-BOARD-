@@ -12,7 +12,6 @@ from PySide6.QtGui import QGuiApplication, QTransform
 from refpad.core import images, pdf
 from refpad.core.store import PRACTICE, PDF, BoardItem, Pose
 
-BOARD_PDF_MAX_PAGES = 30
 BOARD_PAGE_SIDE = 1800
 BOARD_FOLDER_MAX = 60
 PRACTICE_FOLDER_MAX = 5000
@@ -137,35 +136,45 @@ class Importer:
             self.state.notify(f"Adding the first {BOARD_FOLDER_MAX} pictures (use Practice for big folders)")
         self.images_to_board(found)
 
-    def pdf_to_board(self, path: str):
-        def go(info):
-            n = min(info.count, BOARD_PDF_MAX_PAGES)
-            st = self.state
-            st.busy(f"Adding {plural(n, 'page')} to the board…")
+    def pdf_pages_to_board(self, path: str, pages):
+        """Adds the chosen PDF pages to the board one at a time (light on memory); can be stopped."""
+        pages = list(pages)
+        if not pages:
+            return
+        st = self.state
+        board = st.items        # the import stops if another board is opened meanwhile
+        stop = {"now": False}
+        done = {"added": 0}
+        n = len(pages)
 
-            def step(page):
-                if page >= n:
-                    more = f" (first {n} of {info.count})" if info.count > n else ""
-                    return st.notify(f"Added {plural(n, 'page')} to the board{more}")
-                st.busy(f"Adding pages… {page + 1}/{n}")
-                self.engine.render_once(path, page, BOARD_PAGE_SIDE, lambda img: stored(page, img))
+        def progress(k):
+            st.task.emit(f"Adding pages to the board… {k}/{n}", lambda: stop.__setitem__("now", True))
 
-            def stored(page, img):
-                if img is None:
-                    return step(page + 1)
-                images.run_async(lambda: images.store_image(img), lambda v: added(page, v))
+        def step(k):
+            if stop["now"] or st.items is not board:
+                a = done["added"]
+                return st.notify(f"Stopped · {plural(a, 'page')} added" if a else "Stopped")
+            if k >= n:
+                return st.notify(f"Added {plural(done['added'], 'page')} to the board")
+            progress(k + 1)
+            self.engine.render_once(path, pages[k], BOARD_PAGE_SIDE, lambda img: stored(k, img))
 
-            def added(page, v):
-                if isinstance(v, Exception):
-                    return st.notify(f"Stopped adding pages: {v}")
+        def stored(k, img):
+            if img is None:
+                return step(k + 1)
+            images.run_async(lambda: images.store_image(img), lambda v: added(k, v))
+
+        def added(k, v):
+            if isinstance(v, Exception):
+                return st.notify(f"Stopped adding pages: {v}")
+            if st.items is board and not stop["now"]:
                 item = BoardItem(*v)
                 item.fit_new()
                 st.add_items([item])
-                step(page + 1)
+                done["added"] += 1
+            step(k + 1)
 
-            step(0)
-
-        self.with_info(path, go)
+        step(0)
 
     def page_to_board(self, path: str, page: int):
         st = self.state

@@ -39,6 +39,11 @@ reg add "%KEY%" /v InstallLocation /d "%DEST%" /f >nul
 reg add "%KEY%" /v UninstallString /d "\"%DEST%\Uninstall RefPad.cmd\"" /f >nul
 reg add "%KEY%" /v NoModify /t REG_DWORD /d 1 /f >nul
 reg add "%KEY%" /v NoRepair /t REG_DWORD /d 1 /f >nul
+rem Double-clicking a .refpad board file opens it in RefPad
+reg add "HKCU\Software\Classes\.refpad" /ve /d "RefPad.Board" /f >nul
+reg add "HKCU\Software\Classes\RefPad.Board" /ve /d "RefPad board" /f >nul
+reg add "HKCU\Software\Classes\RefPad.Board\DefaultIcon" /ve /d "\"%DEST%\RefPad.exe\",0" /f >nul
+reg add "HKCU\Software\Classes\RefPad.Board\shell\open\command" /ve /d "\"%DEST%\RefPad.exe\" \"%%1\"" /f >nul
 
 echo RefPad is installed. Starting it now...
 start "" "%DEST%\RefPad.exe"

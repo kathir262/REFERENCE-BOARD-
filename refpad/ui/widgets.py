@@ -451,6 +451,7 @@ class EmptyState(QFrame):
         self._handlers = {}
         for btn in (self.primary, self.secondary, self.tertiary, self.link):
             btn.clicked.connect(lambda _=False, b=btn: self._handlers.get(b, lambda: None)())
+        self.hide()   # shown only once it has content
 
     def set_content(self, icon_name, title, body, primary, secondary=None, tertiary=None, link=None, tip=""):
         self.icon.setPixmap(_icon_circle(theme.pixmap(icon_name, theme.ACCENT, 30)))

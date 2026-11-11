@@ -63,6 +63,7 @@ class BoardView(QWidget):
         state.boardChanged.connect(self._on_board_changed)
         state.itemsMoved.connect(self.update)
         state.itemsAdded.connect(self._on_items_added)
+        state.boardReplaced.connect(self._on_replaced)
         images.cache.changed.connect(self._on_cache_changed)
 
     # ------------------------------------------------------------------ coordinates
@@ -334,6 +335,23 @@ class BoardView(QWidget):
     def _on_board_changed(self):
         if any(it not in self.state.items for it in self.selected):
             self.set_selected([it for it in self.selected if it in self.state.items])
+        self.update()
+        self._idle.start()
+
+    def _on_replaced(self):
+        """Another board was opened (or a new one started): its own camera, nothing selected."""
+        self._added = []
+        self._reveal.stop()
+        self._display.clear()
+        self._stop_anim()
+        self.selected = []
+        self.selectionChanged.emit()
+        if self.state.view:
+            self.cx, self.cy, self.zoom = self.state.view
+        else:
+            self.cx, self.cy, self.zoom = 0.0, 0.0, 0.5
+            if self.state.items:
+                QTimer.singleShot(0, lambda: self.fit_all(animate=False))
         self.update()
         self._idle.start()
 

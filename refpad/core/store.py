@@ -127,7 +127,10 @@ class State(QObject):
     poseChanged = Signal()         # a different pose is showing
     docsChanged = Signal()         # recent PDFs changed (or the open one)
     modeChanged = Signal(str)
+    boardFileChanged = Signal()    # the board's file name or its saved/unsaved state changed
+    boardReplaced = Signal()       # a different board was opened or a new one started
     status = Signal(str, bool, object)   # message, busy, undo callback (or None)
+    task = Signal(str, object)           # long job in progress: message, stop callback
 
     def __init__(self):
         super().__init__()
@@ -140,6 +143,9 @@ class State(QObject):
         self.practice_flip = False
         self.practice_gray = False
         self.view = None               # saved board camera [cx, cy, zoom]
+        self.board_path = None         # the .refpad file this board belongs to (None = untitled)
+        self.board_dirty = False       # changed since it was last saved to that file
+        self.board_suggested = ""      # name to offer when saving an untitled board
         self.screen_aspect = 16 / 9    # set by the board view, used to lay out rows
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
@@ -172,6 +178,7 @@ class State(QObject):
             if place:
                 self._place(item)
             self.items.append(item)
+        self._set_dirty(True)
         self.boardChanged.emit()
         self.itemsAdded.emit(list(new))
         self.schedule_save()
@@ -222,6 +229,7 @@ class State(QObject):
 
     def edited(self):
         """Call after any finished change to the board: redraws and saves."""
+        self._set_dirty(True)
         self.boardChanged.emit()
         self.schedule_save()
 
@@ -271,6 +279,38 @@ class State(QObject):
                 self.items.remove(it)
                 self.items.insert(0, it)
         self.edited()
+
+    # ------------------------------------------------------------------ board files
+
+    @property
+    def board_name(self) -> str:
+        if self.board_path:
+            return Path(self.board_path).stem
+        return self.board_suggested or "Untitled board"
+
+    def _set_dirty(self, dirty: bool):
+        if dirty != self.board_dirty:
+            self.board_dirty = dirty
+            self.boardFileChanged.emit()
+
+    def mark_saved(self, path: str):
+        self.board_path = path
+        self.board_suggested = ""
+        self.board_dirty = False
+        self.boardFileChanged.emit()
+        self.schedule_save()
+
+    def replace_board(self, items: list, path=None, view=None, suggested: str = ""):
+        """Shows a different board (opened from a file, or a new empty one)."""
+        self.items = list(items)
+        self.board_path = path
+        self.board_suggested = suggested
+        self.board_dirty = False
+        self.view = view
+        self.boardChanged.emit()
+        self.boardReplaced.emit()
+        self.boardFileChanged.emit()
+        self.schedule_save()
 
     # ------------------------------------------------------------------ practice
 
@@ -404,6 +444,9 @@ class State(QObject):
             "practice_gray": self.practice_gray,
             "docs": [d.to_json() for d in self.docs],
             "view": self.view,
+            "board_path": self.board_path,
+            "board_dirty": self.board_dirty,
+            "board_suggested": self.board_suggested,
         }
         tmp = paths.STATE_FILE.with_suffix(".tmp")
         try:
@@ -446,6 +489,9 @@ class State(QObject):
         self.mode = mode if mode in MODES else BOARD
         view = data.get("view")
         self.view = view if isinstance(view, list) and len(view) == 3 else None
+        self.board_path = data.get("board_path") or None
+        self.board_dirty = bool(data.get("board_dirty"))
+        self.board_suggested = str(data.get("board_suggested") or "")
         self.delete_unused_images()
 
     def delete_unused_images(self):

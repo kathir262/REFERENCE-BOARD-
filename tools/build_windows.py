@@ -6,6 +6,7 @@ Output in dist/:
     RefPad/                               the app (run RefPad/RefPad.exe)
     RefPad-<version>-windows-x64.zip      upload to a GitHub release
     RefPad-<version>-windows-x64.zip.sha256   upload too: the in-app updater refuses updates without it
+    RefPad-Setup-<version>.exe            one file to double-click for a first install (upload it as well)
 """
 import hashlib
 import re
@@ -25,18 +26,20 @@ def version() -> str:
     return re.search(r'__version__\s*=\s*"([^"]+)"', text).group(1)
 
 
-def write_version_info(v: str):
+def write_version_info(v: str, out: Path = None, description: str = "RefPad - reference board, gesture practice and PDF reader",
+                       exe: str = "RefPad.exe"):
     nums = tuple(int(x) for x in v.split(".")) + (0,)
-    (ROOT / "build").mkdir(exist_ok=True)
-    (ROOT / "build/version_info.txt").write_text(f"""VSVersionInfo(
+    out = out or ROOT / "build/version_info.txt"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(f"""VSVersionInfo(
   ffi=FixedFileInfo(filevers={nums[:4]}, prodvers={nums[:4]}, mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)),
   kids=[
     StringFileInfo([StringTable('040904B0', [
-      StringStruct('FileDescription', 'RefPad - reference board, gesture practice and PDF reader'),
+      StringStruct('FileDescription', '{description}'),
       StringStruct('FileVersion', '{v}'),
       StringStruct('ProductName', 'RefPad'),
       StringStruct('ProductVersion', '{v}'),
-      StringStruct('OriginalFilename', 'RefPad.exe'),
+      StringStruct('OriginalFilename', '{exe}'),
       StringStruct('InternalName', 'RefPad'),
       StringStruct('LegalCopyright', 'Free software, no ads'),
     ])]),
@@ -76,6 +79,26 @@ def folder_size(p: Path) -> int:
     return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
 
 
+def build_setup(v: str, zip_path: Path) -> Path:
+    """RefPad-Setup-<version>.exe: the release zip inside a small one-file installer (tools/windows/setup_main.py)."""
+    work = ROOT / "build/setup"
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True)
+    shutil.copy2(zip_path, work / "RefPad.zip")
+    (work / "version.txt").write_text(v, encoding="utf-8")
+    name = f"RefPad-Setup-{v}"
+    write_version_info(v, work / "version_info.txt", "RefPad Setup", name + ".exe")
+    subprocess.check_call([
+        sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--log-level", "WARN", "--onefile", "--noconsole",
+        "--name", name, "--icon", str(ROOT / "refpad/assets/refpad.ico"), "--version-file", str(work / "version_info.txt"),
+        "--add-data", f"{work / 'RefPad.zip'};.", "--add-data", f"{work / 'version.txt'};.",
+        "--exclude-module", "PySide6", "--exclude-module", "shiboken6", "--exclude-module", "tkinter",
+        "--exclude-module", "PIL", "--exclude-module", "numpy", "--exclude-module", "fitz", "--exclude-module", "pymupdf",
+        "--distpath", str(DIST), "--workpath", str(work / "pyi"), "--specpath", str(work),
+        str(ROOT / "tools/windows/setup_main.py")], cwd=ROOT)
+    return DIST / (name + ".exe")
+
+
 def main():
     v = version()
     write_version_info(v)
@@ -95,10 +118,13 @@ def main():
     digest = hashlib.sha256(zip_path.read_bytes()).hexdigest()
     (DIST / (zip_path.name + ".sha256")).write_text(f"{digest}  {zip_path.name}\n", encoding="utf-8")
 
+    setup = build_setup(v, zip_path)
+
     print(f"RefPad {v}")
     print(f"  app folder: {folder_size(APP) / 1024 / 1024:.1f} MB (removed {removed / 1024 / 1024:.1f} MB of unused Qt)")
     print(f"  {zip_path.name}: {zip_path.stat().st_size / 1024 / 1024:.1f} MB")
     print(f"  sha256: {digest}")
+    print(f"  {setup.name}: {setup.stat().st_size / 1024 / 1024:.1f} MB")
 
 
 if __name__ == "__main__":

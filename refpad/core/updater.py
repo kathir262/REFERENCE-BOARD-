@@ -280,3 +280,18 @@ def cleanup_leftovers():
 
 def due_for_check(last_check: float) -> bool:
     return time.time() - (last_check or 0) > 20 * 3600
+
+
+def refresh_install_record():
+    """Keeps "Settings > Apps" showing the right version after an in-app update."""
+    if not paths.is_frozen() or os.name != "nt":
+        return
+    try:
+        import winreg
+        key = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\RefPad"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key, 0, winreg.KEY_READ | winreg.KEY_SET_VALUE) as k:
+            location, _ = winreg.QueryValueEx(k, "InstallLocation")
+            if os.path.normcase(os.path.abspath(location)) == os.path.normcase(str(paths.install_dir())):
+                winreg.SetValueEx(k, "DisplayVersion", 0, winreg.REG_SZ, __version__)
+    except OSError:
+        pass
