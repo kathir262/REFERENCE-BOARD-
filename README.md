@@ -29,14 +29,6 @@ Free, no ads, no accounts, no tracking. See the [privacy policy](docs/privacy-po
 
 <br clear="right">
 
-### Android
-
-<p align="center">
-  <img src="play-store/screenshots/phone-1-board.png" alt="Board on a phone" width="250">
-  <img src="play-store/screenshots/phone-2-practice.png" alt="Practice on a phone" width="250">
-  <img src="play-store/screenshots/phone-3-pdf-reader.png" alt="PDF reader on a phone" width="250">
-</p>
-
 The pictures shown are public-domain works from The Metropolitan Museum of Art and the Art Institute of Chicago (see [play-store/CREDITS.md](play-store/CREDITS.md)).
 
 ---
