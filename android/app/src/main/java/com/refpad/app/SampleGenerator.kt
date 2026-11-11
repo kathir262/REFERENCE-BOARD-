@@ -10,11 +10,12 @@ import android.graphics.RectF
 object SampleGenerator {
 
     fun createSamplePoses(): List<Bitmap> {
+        // The samples are fully opaque, so they can be saved as compact JPEGs.
         return listOf(
             createDynamicActionPose(),
             createContrappostoPose(),
             createGestureStudyPose()
-        )
+        ).onEach { it.setHasAlpha(false) }
     }
 
     private fun createDynamicActionPose(): Bitmap {

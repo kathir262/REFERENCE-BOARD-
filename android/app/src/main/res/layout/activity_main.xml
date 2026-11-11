@@ -2,460 +2,549 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/main_root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@color/bg_dark">
+    android:layout_height="match_parent">
 
-    <!-- Interactive Infinite Canvas (Base Layer) -->
+    <!-- Board / practice canvas (padding keeps "fit" clear of the bars) -->
     <com.refpad.app.RefCanvasView
         android:id="@+id/ref_canvas"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:paddingTop="80dp"
+        android:paddingBottom="100dp" />
 
-    <!-- Sleek Empty State (Centered when no references loaded) -->
-    <LinearLayout
-        android:id="@+id/empty_state_view"
-        android:layout_width="320dp"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:background="@drawable/hud_background"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:padding="24dp">
+    <!-- PDF reader (shown in PDF mode) -->
+    <com.refpad.app.PdfViewerView
+        android:id="@+id/pdf_viewer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:paddingTop="80dp"
+        android:paddingBottom="100dp"
+        android:visibility="gone" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/app_name"
-            android:textColor="@color/accent_yellow"
-            android:textSize="22sp"
-            android:textStyle="bold" />
+    <!-- Keeps the clock and status icons readable over pages and images -->
+    <View
+        android:id="@+id/status_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_gravity="top"
+        android:background="#E60E0E10"
+        android:elevation="6dp" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:layout_marginBottom="20dp"
-            android:gravity="center"
-            android:text="Infinite reference canvas and gesture practice for digital artists. Long press anywhere for context menus."
-            android:textColor="@color/text_secondary"
-            android:textSize="12sp"
-            android:lineSpacingExtra="2dp" />
-
-        <Button
-            android:id="@+id/btn_empty_sample"
-            android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:layout_marginBottom="10dp"
-            android:background="@drawable/btn_yellow_bg"
-            android:text="Load Sample References"
-            android:textColor="@color/text_dark"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/btn_empty_pdf"
-            android:layout_width="match_parent"
-            android:layout_height="42dp"
-            android:layout_marginBottom="8dp"
-            android:background="@drawable/btn_action_bg"
-            android:text="Import PDF Art Book"
-            android:textColor="@color/accent_yellow"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/btn_empty_images"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:layout_marginBottom="8dp"
-            android:background="@drawable/btn_action_bg"
-            android:text="@string/btn_select_images"
-            android:textColor="@color/text_primary"
-            android:textSize="12sp" />
-
-        <Button
-            android:id="@+id/btn_empty_folder"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:background="@drawable/btn_action_bg"
-            android:text="@string/btn_select_folder"
-            android:textColor="@color/text_primary"
-            android:textSize="12sp" />
-
-    </LinearLayout>
-
-    <!-- Top App Bar (Positioned below system status bar) -->
+    <!-- Top bar -->
     <LinearLayout
         android:id="@+id/top_bar"
         android:layout_width="match_parent"
-        android:layout_height="50dp"
+        android:layout_height="60dp"
         android:layout_gravity="top"
-        android:layout_marginTop="34dp"
-        android:background="#D0121214"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/bg_bar"
+        android:elevation="6dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp">
+        android:paddingStart="18dp"
+        android:paddingEnd="8dp">
 
         <TextView
             android:id="@+id/tv_app_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="8dp"
-            android:text="RefPad"
-            android:textColor="@color/accent_yellow"
-            android:textSize="15sp"
-            android:textStyle="bold" />
+            android:fontFamily="sans-serif-black"
+            android:text="@string/app_name"
+            android:textColor="@color/accent"
+            android:textSize="20sp" />
 
-        <HorizontalScrollView
+        <!-- Mode buttons, with space between them -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:layout_marginStart="@dimen/seg_margin_start"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/seg_board"
+                style="@style/SegmentItem"
+                android:text="@string/board" />
+
+            <TextView
+                android:id="@+id/seg_practice"
+                style="@style/SegmentItem"
+                android:layout_marginStart="@dimen/seg_gap"
+                android:text="@string/practice" />
+
+            <TextView
+                android:id="@+id/seg_pdf"
+                style="@style/SegmentItem"
+                android:layout_marginStart="@dimen/seg_gap"
+                android:text="@string/pdf_reader" />
+        </LinearLayout>
+
+        <!-- Practice timer sits in the middle of the bar, so it never covers the pose -->
+        <FrameLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1"
+            android:layout_weight="1">
+
+            <LinearLayout
+                android:id="@+id/hud_card"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/tv_countdown"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif-medium"
+                    android:fontFeatureSettings="tnum"
+                    android:text="2:00"
+                    android:textColor="@color/accent"
+                    android:textSize="27sp" />
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tv_pose_counter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:singleLine="true"
+                        android:text="Pose 1 of 1"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12.5sp" />
+
+                    <ProgressBar
+                        android:id="@+id/pb_timer"
+                        style="?android:attr/progressBarStyleHorizontal"
+                        android:layout_width="130dp"
+                        android:layout_height="4dp"
+                        android:layout_marginTop="6dp"
+                        android:max="1000"
+                        android:progressBackgroundTint="@color/stroke_strong"
+                        android:progressTint="@color/accent" />
+                </LinearLayout>
+            </LinearLayout>
+        </FrameLayout>
+
+        <ImageButton
+            android:id="@+id/btn_add"
+            style="@style/IconButton"
+            android:contentDescription="@string/add"
+            android:src="@drawable/ic_add"
+            android:tint="@color/accent" />
+
+        <ImageButton
+            android:id="@+id/btn_float"
+            style="@style/IconButton"
+            android:layout_marginStart="2dp"
+            android:contentDescription="@string/float_window"
+            android:src="@drawable/ic_float" />
+
+        <ImageButton
+            android:id="@+id/btn_more"
+            style="@style/IconButton"
+            android:layout_marginStart="2dp"
+            android:contentDescription="@string/more"
+            android:src="@drawable/ic_more" />
+    </LinearLayout>
+
+    <!-- Empty state -->
+    <LinearLayout
+        android:id="@+id/empty_card"
+        android:layout_width="@dimen/empty_card_width"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_card"
+        android:elevation="8dp"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="28dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/empty_icon"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:background="@drawable/bg_icon_circle"
+            android:contentDescription="@null"
+            android:scaleType="center"
+            android:src="@drawable/ic_image"
+            android:tint="@color/accent" />
+
+        <TextView
+            android:id="@+id/empty_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:textColor="@color/text_primary"
+            android:textSize="21sp" />
+
+        <TextView
+            android:id="@+id/empty_body"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:lineSpacingExtra="3dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/empty_primary"
+            style="@style/ButtonPrimary"
+            android:layout_marginTop="24dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/empty_secondary"
+                style="@style/ButtonSecondary" />
+
+            <TextView
+                android:id="@+id/empty_tertiary"
+                style="@style/ButtonSecondary"
+                android:layout_marginStart="10dp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/empty_link"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_tool"
+            android:fontFamily="sans-serif-medium"
+            android:padding="10dp"
+            android:textColor="@color/accent"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:text="@string/tip"
+            android:textColor="@color/text_muted"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- Progress / undo chip -->
+    <LinearLayout
+        android:id="@+id/status_chip"
+        android:layout_width="wrap_content"
+        android:layout_height="40dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="104dp"
+        android:background="@drawable/bg_chip"
+        android:elevation="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="14dp"
+        android:paddingEnd="8dp"
+        android:visibility="gone">
+
+        <ProgressBar
+            android:id="@+id/status_spinner"
+            style="?android:attr/progressBarStyleSmall"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginEnd="10dp"
+            android:indeterminateTint="@color/accent" />
+
+        <TextView
+            android:id="@+id/tv_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:textColor="@color/text_primary"
+            android:textSize="13.5sp" />
+
+        <TextView
+            android:id="@+id/btn_undo"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:background="@drawable/bg_tool"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:text="@string/undo"
+            android:textColor="@color/accent"
+            android:textSize="13sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Bottom toolbar -->
+    <FrameLayout
+        android:id="@+id/toolbar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/bg_bar"
+        android:elevation="8dp"
+        android:padding="6dp">
+
+        <HorizontalScrollView
+            android:id="@+id/board_tools"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:overScrollMode="never"
             android:scrollbars="none">
 
             <LinearLayout
                 android:layout_width="wrap_content"
-                android:layout_height="match_parent"
+                android:layout_height="wrap_content"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
-                <Button
-                    android:id="@+id/btn_top_pdf"
-                    android:layout_width="wrap_content"
-                    android:layout_height="30dp"
-                    android:layout_marginEnd="6dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="+ PDF"
-                    android:textColor="@color/accent_yellow"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/btn_add_image"
+                    style="@style/Tool.Accent"
+                    android:drawableTop="@drawable/ic_image"
+                    android:text="@string/image" />
 
-                <Button
-                    android:id="@+id/btn_mode_toggle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="30dp"
-                    android:layout_marginEnd="6dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="Ref Board"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
+                <TextView
+                    android:id="@+id/btn_add_pdf"
+                    style="@style/Tool.Accent"
+                    android:drawableTop="@drawable/ic_pdf"
+                    android:text="@string/pdf" />
 
-                <Button
-                    android:id="@+id/btn_float_overlay"
-                    android:layout_width="wrap_content"
-                    android:layout_height="30dp"
-                    android:layout_marginEnd="6dp"
-                    android:background="@drawable/btn_yellow_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="Float Window"
-                    android:textColor="@color/text_dark"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
+                <View style="@style/ToolDivider" />
+
+                <TextView
+                    android:id="@+id/btn_flip"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_flip"
+                    android:text="@string/flip" />
+
+                <TextView
+                    android:id="@+id/btn_bw"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_bw"
+                    android:text="@string/bw" />
+
+                <TextView
+                    android:id="@+id/btn_rotate"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_rotate"
+                    android:text="@string/rotate" />
+
+                <TextView
+                    android:id="@+id/btn_copy"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_copy"
+                    android:text="@string/copy" />
+
+                <TextView
+                    android:id="@+id/btn_paste"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_paste"
+                    android:text="@string/paste" />
+
+                <TextView
+                    android:id="@+id/btn_delete"
+                    style="@style/Tool.Danger"
+                    android:drawableTop="@drawable/ic_delete"
+                    android:text="@string/delete" />
+
+                <View style="@style/ToolDivider" />
+
+                <TextView
+                    android:id="@+id/btn_arrange"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_arrange"
+                    android:text="@string/arrange" />
+
+                <TextView
+                    android:id="@+id/btn_fit"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_fit"
+                    android:text="@string/fit" />
+
+                <TextView
+                    android:id="@+id/btn_board_more"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_more"
+                    android:text="@string/more"
+                    android:visibility="gone" />
             </LinearLayout>
         </HorizontalScrollView>
 
-        <Button
-            android:id="@+id/btn_top_menu"
-            android:layout_width="34dp"
-            android:layout_height="30dp"
-            android:background="@drawable/pill_button_bg"
-            android:text="≡"
-            android:textColor="@color/text_primary"
-            android:textSize="15sp" />
-
-    </LinearLayout>
-
-    <!-- Practice Mode HUD Overlay Card -->
-    <LinearLayout
-        android:id="@+id/hud_card"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
-        android:layout_marginStart="16dp"
-        android:layout_marginTop="92dp"
-        android:background="@drawable/hud_background"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:paddingStart="16dp"
-        android:paddingTop="10dp"
-        android:paddingEnd="16dp"
-        android:paddingBottom="10dp"
-        android:visibility="gone">
-
-        <TextView
-            android:id="@+id/tv_countdown"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="02:00"
-            android:textColor="@color/accent_yellow"
-            android:textSize="24sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/tv_badge"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="3dp"
-            android:text="2 MIN POSE"
-            android:textColor="@color/text_secondary"
-            android:textSize="10sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/tv_pose_counter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="Pose 1/1"
-            android:textColor="@color/text_secondary"
-            android:textSize="9sp" />
-    </LinearLayout>
-
-    <!-- Bottom Floating Dock (Centered Glass Pill with Horizontal Scroll on Phones) -->
-    <FrameLayout
-        android:id="@+id/bottom_dock_container"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="24dp"
-        android:layout_marginStart="12dp"
-        android:layout_marginEnd="12dp"
-        android:background="@drawable/dock_background"
-        android:padding="6dp">
-
-        <!-- Reference Mode Dock Toolbar -->
         <HorizontalScrollView
-            android:id="@+id/dock_ref_scroll"
+            android:id="@+id/practice_tools"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:scrollbars="none"
-            android:visibility="visible">
-
-            <LinearLayout
-                android:id="@+id/dock_ref_controls"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/btn_dock_menu"
-                    android:layout_width="34dp"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:text="≡"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
-
-                <Button
-                    android:id="@+id/btn_dock_pdf"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="+ PDF"
-                    android:textColor="@color/accent_yellow"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
-
-                <Button
-                    android:id="@+id/btn_dock_add"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="+ Image"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
-
-                <Button
-                    android:id="@+id/btn_dock_flip"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="@string/btn_flip"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
-
-                <Button
-                    android:id="@+id/btn_dock_bw"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="@string/btn_mono"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
-
-                <Button
-                    android:id="@+id/btn_dock_reset"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="@string/btn_reset"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
-
-                <Button
-                    android:id="@+id/btn_dock_del"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="@string/btn_del"
-                    android:textColor="@color/text_danger"
-                    android:textSize="11sp" />
-
-                <Button
-                    android:id="@+id/btn_dock_to_practice"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:background="@drawable/btn_yellow_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="Practice"
-                    android:textColor="@color/text_dark"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-        </HorizontalScrollView>
-
-        <!-- Practice Mode Dock Toolbar -->
-        <HorizontalScrollView
-            android:id="@+id/dock_practice_scroll"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:overScrollMode="never"
             android:scrollbars="none"
             android:visibility="gone">
 
             <LinearLayout
-                android:id="@+id/dock_practice_controls"
                 android:layout_width="wrap_content"
-                android:layout_height="36dp"
+                android:layout_height="wrap_content"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
-                <Button
-                    android:id="@+id/btn_dock_interval"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="2m"
-                    android:textColor="@color/accent_yellow"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/btn_interval"
+                    style="@style/Tool.Accent"
+                    android:drawableTop="@drawable/ic_timer"
+                    android:minWidth="72dp"
+                    android:text="2 min" />
 
-                <Button
-                    android:id="@+id/btn_dock_practice_pdf"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="+ PDF"
-                    android:textColor="@color/accent_yellow"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
+                <View style="@style/ToolDivider" />
 
-                <Button
-                    android:id="@+id/btn_dock_prev"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="@string/btn_prev"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
+                <TextView
+                    android:id="@+id/btn_prev"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_prev"
+                    android:text="@string/prev" />
 
-                <Button
-                    android:id="@+id/btn_dock_play_pause"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="12dp"
-                    android:text="@string/btn_play"
-                    android:textColor="@color/accent_yellow"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
+                <ImageButton
+                    android:id="@+id/btn_play"
+                    android:layout_width="54dp"
+                    android:layout_height="54dp"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/bg_play"
+                    android:contentDescription="@string/play_pause"
+                    android:scaleType="center"
+                    android:src="@drawable/ic_play"
+                    android:tint="@color/text_on_accent" />
 
-                <Button
-                    android:id="@+id/btn_dock_next"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="@string/btn_next"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
+                <TextView
+                    android:id="@+id/btn_next"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_next"
+                    android:text="@string/next" />
 
-                <Button
-                    android:id="@+id/btn_dock_flip_p"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="@string/btn_flip"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
+                <View style="@style/ToolDivider" />
 
-                <Button
-                    android:id="@+id/btn_dock_bw_p"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/pill_button_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="@string/btn_mono"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp" />
+                <TextView
+                    android:id="@+id/btn_p_flip"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_flip"
+                    android:text="@string/flip" />
 
-                <Button
-                    android:id="@+id/btn_dock_to_ref"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:background="@drawable/btn_yellow_bg"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="Ref Board"
-                    android:textColor="@color/text_dark"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/btn_p_bw"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_bw"
+                    android:text="@string/bw" />
+
+                <View style="@style/ToolDivider" />
+
+                <TextView
+                    android:id="@+id/btn_p_add"
+                    style="@style/Tool.Accent"
+                    android:drawableTop="@drawable/ic_add"
+                    android:text="@string/add" />
+
+                <TextView
+                    android:id="@+id/btn_practice_more"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_more"
+                    android:text="@string/more"
+                    android:visibility="gone" />
             </LinearLayout>
         </HorizontalScrollView>
 
+        <HorizontalScrollView
+            android:id="@+id/pdf_tools"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:overScrollMode="never"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/btn_pdf_open"
+                    style="@style/Tool.Accent"
+                    android:drawableTop="@drawable/ic_pdf"
+                    android:text="@string/open" />
+
+                <TextView
+                    android:id="@+id/btn_pdf_recent"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_history"
+                    android:text="@string/recent" />
+
+                <View style="@style/ToolDivider" />
+
+                <TextView
+                    android:id="@+id/btn_pdf_prev"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_page_up"
+                    android:text="@string/prev" />
+
+                <TextView
+                    android:id="@+id/tv_pdf_page"
+                    android:layout_width="wrap_content"
+                    android:layout_height="58dp"
+                    android:fontFamily="sans-serif-medium"
+                    android:fontFeatureSettings="tnum"
+                    android:gravity="center"
+                    android:minWidth="84dp"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:text="-"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/btn_pdf_next"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_page_down"
+                    android:text="@string/next" />
+
+                <View style="@style/ToolDivider" />
+
+                <TextView
+                    android:id="@+id/btn_pdf_fit"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_fit"
+                    android:text="@string/fit" />
+
+                <TextView
+                    android:id="@+id/btn_pdf_to_board"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_image"
+                    android:text="@string/to_board" />
+
+                <TextView
+                    android:id="@+id/btn_pdf_practice"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_timer"
+                    android:text="@string/practise" />
+
+                <TextView
+                    android:id="@+id/btn_pdf_more"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_more"
+                    android:text="@string/more"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </HorizontalScrollView>
     </FrameLayout>
 
 </FrameLayout>

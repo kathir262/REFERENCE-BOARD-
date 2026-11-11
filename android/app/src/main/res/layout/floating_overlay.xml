@@ -1,592 +1,381 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/overlay_root"
-    android:layout_width="380dp"
-    android:layout_height="480dp">
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
 
-    <!-- Expanded Window Container -->
+    <!-- Expanded window -->
     <LinearLayout
         android:id="@+id/window_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@drawable/overlay_background"
+        android:background="@drawable/bg_overlay_window"
+        android:clipToOutline="true"
         android:orientation="vertical">
 
-        <!-- Draggable Top Header -->
+        <!-- Header: drag anywhere on it to move the window -->
         <LinearLayout
             android:id="@+id/header_bar"
             android:layout_width="match_parent"
-            android:layout_height="38dp"
-            android:background="#2018181B"
+            android:layout_height="44dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp">
+            android:paddingStart="6dp"
+            android:paddingEnd="4dp">
 
-            <TextView
-                android:id="@+id/tv_header_title"
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_drag"
+                android:tint="@color/text_muted" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="30dp"
+                android:layout_marginStart="4dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/seg_board"
+                    style="@style/SegmentItem.Compact"
+                    android:text="@string/board" />
+
+                <TextView
+                    android:id="@+id/seg_practice"
+                    style="@style/SegmentItem.Compact"
+                    android:layout_marginStart="6dp"
+                    android:text="@string/practice" />
+
+                <TextView
+                    android:id="@+id/seg_pdf"
+                    style="@style/SegmentItem.Compact"
+                    android:layout_marginStart="6dp"
+                    android:text="@string/pdf_reader" />
+            </LinearLayout>
+
+            <View
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Reference Board"
-                android:textColor="@color/accent_yellow"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:layout_height="1dp"
+                android:layout_weight="1" />
 
-            <Button
-                android:id="@+id/btn_floating_menu"
-                android:layout_width="wrap_content"
-                android:layout_height="26dp"
-                android:layout_marginEnd="6dp"
-                android:background="@drawable/btn_action_bg"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"
-                android:text="Menu"
-                android:textColor="@color/accent_yellow"
-                android:textSize="10sp"
-                android:textStyle="bold" />
+            <ImageButton
+                android:id="@+id/btn_add"
+                style="@style/IconButton.Compact"
+                android:contentDescription="@string/add"
+                android:src="@drawable/ic_add"
+                android:tint="@color/accent" />
 
-            <Button
-                android:id="@+id/btn_mode_toggle"
-                android:layout_width="wrap_content"
-                android:layout_height="26dp"
-                android:layout_marginEnd="6dp"
-                android:background="@drawable/btn_action_bg"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"
-                android:text="Ref Board"
-                android:textColor="@color/text_primary"
-                android:textSize="10sp" />
+            <ImageButton
+                android:id="@+id/btn_more"
+                style="@style/IconButton.Compact"
+                android:contentDescription="@string/more"
+                android:src="@drawable/ic_more" />
 
-            <Button
+            <ImageButton
                 android:id="@+id/btn_minimize"
-                android:layout_width="26dp"
-                android:layout_height="26dp"
-                android:layout_marginEnd="6dp"
-                android:background="@drawable/btn_action_bg"
-                android:text="—"
-                android:textColor="@color/text_primary"
-                android:textSize="11sp" />
+                style="@style/IconButton.Compact"
+                android:contentDescription="@string/minimize"
+                android:src="@drawable/ic_minimize" />
 
-            <Button
+            <ImageButton
                 android:id="@+id/btn_close"
-                android:layout_width="26dp"
-                android:layout_height="26dp"
-                android:background="@drawable/btn_action_bg"
-                android:text="X"
-                android:textColor="@color/text_danger"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+                style="@style/IconButton.Compact"
+                android:contentDescription="@string/close"
+                android:src="@drawable/ic_close" />
         </LinearLayout>
 
-        <!-- Main Content Area: Reference Canvas, Practice HUD & In-Window Menu -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/stroke" />
+
+        <!-- Canvas, timer, hints and the in-window menu -->
         <FrameLayout
             android:id="@+id/content_area"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1">
 
-            <!-- Interactive RefPad Canvas View -->
             <com.refpad.app.RefCanvasView
                 android:id="@+id/ref_canvas"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
-            <!-- Practice HUD Overlay Card -->
-            <LinearLayout
-                android:id="@+id/hud_card"
+            <com.refpad.app.PdfViewerView
+                android:id="@+id/pdf_viewer"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
+
+            <!-- Timer progress: a thin line along the bottom of the pose -->
+            <ProgressBar
+                android:id="@+id/pb_timer"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="3dp"
+                android:layout_gravity="bottom"
+                android:max="1000"
+                android:progressBackgroundTint="@android:color/transparent"
+                android:progressTint="@color/accent"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/empty_hint"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_gravity="top|start"
-                android:layout_margin="10dp"
-                android:background="@drawable/hud_background"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_tool"
+                android:drawableTop="@drawable/ic_add"
+                android:drawablePadding="6dp"
+                android:drawableTint="@color/accent"
                 android:gravity="center"
-                android:orientation="vertical"
-                android:paddingStart="12dp"
-                android:paddingTop="6dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="6dp"
-                android:visibility="gone">
+                android:padding="16dp"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:visibility="gone" />
 
-                <TextView
-                    android:id="@+id/tv_countdown"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="02:00"
-                    android:textColor="@color/accent_yellow"
-                    android:textSize="18sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tv_badge"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="2 MIN POSE"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="9sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tv_pose_counter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="Pose 1/1"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="8sp" />
-            </LinearLayout>
-
-            <!-- In-Window Compact Context Menu (Strictly within floating window!) -->
             <LinearLayout
-                android:id="@+id/menu_card"
-                android:layout_width="165dp"
-                android:layout_height="wrap_content"
-                android:layout_gravity="top|start"
-                android:background="@drawable/menu_card_bg"
-                android:orientation="vertical"
-                android:padding="6dp"
-                android:elevation="16dp"
+                android:id="@+id/status_chip"
+                android:layout_width="wrap_content"
+                android:layout_height="34dp"
+                android:layout_gravity="bottom|center_horizontal"
+                android:layout_marginBottom="8dp"
+                android:background="@drawable/bg_chip"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="12dp"
+                android:paddingEnd="6dp"
                 android:visibility="gone">
 
-                <!-- Header with Title & Close -->
+                <ProgressBar
+                    android:id="@+id/status_spinner"
+                    style="?android:attr/progressBarStyleSmall"
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
+                    android:layout_marginEnd="8dp"
+                    android:indeterminateTint="@color/accent" />
+
+                <TextView
+                    android:id="@+id/tv_status"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:textColor="@color/text_primary"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/btn_undo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="28dp"
+                    android:background="@drawable/bg_tool"
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="center"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:text="@string/undo"
+                    android:textColor="@color/accent"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </FrameLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/stroke" />
+
+        <!-- Board tools -->
+        <HorizontalScrollView
+            android:id="@+id/board_tools"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:overScrollMode="never"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="4dp"
+                android:paddingEnd="30dp">
+
+                <ImageButton android:id="@+id/btn_add_image" style="@style/ToolCompact.Accent" android:contentDescription="@string/image" android:src="@drawable/ic_image" />
+                <ImageButton android:id="@+id/btn_add_pdf" style="@style/ToolCompact.Accent" android:contentDescription="@string/pdf" android:src="@drawable/ic_pdf" />
+                <View style="@style/ToolDivider" android:layout_height="22dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" />
+                <ImageButton android:id="@+id/btn_flip" style="@style/ToolCompact" android:contentDescription="@string/flip" android:src="@drawable/ic_flip" />
+                <ImageButton android:id="@+id/btn_bw" style="@style/ToolCompact" android:contentDescription="@string/bw" android:src="@drawable/ic_bw" />
+                <ImageButton android:id="@+id/btn_rotate" style="@style/ToolCompact" android:contentDescription="@string/rotate" android:src="@drawable/ic_rotate" />
+                <ImageButton android:id="@+id/btn_copy" style="@style/ToolCompact" android:contentDescription="@string/copy" android:src="@drawable/ic_copy" />
+                <ImageButton android:id="@+id/btn_paste" style="@style/ToolCompact" android:contentDescription="@string/paste" android:src="@drawable/ic_paste" />
+                <ImageButton android:id="@+id/btn_delete" style="@style/ToolCompact.Danger" android:contentDescription="@string/delete" android:src="@drawable/ic_delete" />
+                <View style="@style/ToolDivider" android:layout_height="22dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" />
+                <ImageButton android:id="@+id/btn_arrange" style="@style/ToolCompact" android:contentDescription="@string/arrange" android:src="@drawable/ic_arrange" />
+                <ImageButton android:id="@+id/btn_fit" style="@style/ToolCompact" android:contentDescription="@string/fit" android:src="@drawable/ic_fit" />
+                <ImageButton android:id="@+id/btn_board_more" style="@style/ToolCompact" android:contentDescription="@string/more" android:src="@drawable/ic_more" android:visibility="gone" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <!-- Practice tools -->
+        <HorizontalScrollView
+            android:id="@+id/practice_tools"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:overScrollMode="never"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="4dp"
+                android:paddingEnd="30dp">
+
                 <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="22dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="2dp"
-                    android:layout_marginBottom="4dp">
+                    android:id="@+id/hud_card"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="4dp"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:visibility="gone">
 
                     <TextView
-                        android:id="@+id/tv_menu_title"
-                        android:layout_width="0dp"
+                        android:id="@+id/tv_countdown"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="IMAGE"
-                        android:textColor="@color/accent_yellow"
-                        android:textSize="10sp"
-                        android:textStyle="bold" />
+                        android:fontFamily="sans-serif-medium"
+                        android:fontFeatureSettings="tnum"
+                        android:includeFontPadding="false"
+                        android:text="2:00"
+                        android:textColor="@color/accent"
+                        android:textSize="16sp" />
 
-                    <Button
-                        android:id="@+id/btn_menu_close"
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:background="@android:color/transparent"
-                        android:text="X"
-                        android:textColor="@color/text_secondary"
+                    <TextView
+                        android:id="@+id/tv_pose_counter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:includeFontPadding="false"
+                        android:text="1/1"
+                        android:textColor="@color/text_muted"
                         android:textSize="10sp" />
                 </LinearLayout>
 
-                <ScrollView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:scrollbars="none">
+                <TextView
+                    android:id="@+id/btn_interval"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:background="@drawable/bg_tool"
+                    android:drawableStart="@drawable/ic_timer"
+                    android:drawablePadding="4dp"
+                    android:drawableTint="@color/accent"
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="center_vertical"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="8dp"
+                    android:text="2 min"
+                    android:textColor="@color/accent"
+                    android:textSize="12sp" />
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical">
+                <ImageButton android:id="@+id/btn_prev" style="@style/ToolCompact" android:contentDescription="@string/prev" android:src="@drawable/ic_prev" />
 
-                        <Button
-                            android:id="@+id/btn_menu_copy"
-                            android:layout_width="match_parent"
-                            android:layout_height="28dp"
-                            android:background="@drawable/menu_item_bg"
-                            android:gravity="start|center_vertical"
-                            android:paddingStart="8dp"
-                            android:text="Copy"
-                            android:textColor="@color/accent_yellow"
-                            android:textSize="11sp"
-                            android:textStyle="bold" />
+                <ImageButton
+                    android:id="@+id/btn_play"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginStart="2dp"
+                    android:layout_marginEnd="2dp"
+                    android:background="@drawable/bg_play"
+                    android:contentDescription="@string/play_pause"
+                    android:scaleType="center"
+                    android:src="@drawable/ic_play"
+                    android:tint="@color/text_on_accent" />
 
-                        <Button
-                            android:id="@+id/btn_menu_paste"
-                            android:layout_width="match_parent"
-                            android:layout_height="28dp"
-                            android:background="@drawable/menu_item_bg"
-                            android:gravity="start|center_vertical"
-                            android:paddingStart="8dp"
-                            android:text="Paste"
-                            android:textColor="@color/accent_yellow"
-                            android:textSize="11sp"
-                            android:textStyle="bold" />
-
-                        <Button
-                            android:id="@+id/btn_menu_pdf"
-                            android:layout_width="match_parent"
-                            android:layout_height="28dp"
-                            android:background="@drawable/menu_item_bg"
-                            android:gravity="start|center_vertical"
-                            android:paddingStart="8dp"
-                            android:text="+ Import PDF"
-                            android:textColor="@color/accent_yellow"
-                            android:textSize="11sp"
-                            android:textStyle="bold" />
-
-                        <Button
-                            android:id="@+id/btn_menu_img"
-                            android:layout_width="match_parent"
-                            android:layout_height="28dp"
-                            android:background="@drawable/menu_item_bg"
-                            android:gravity="start|center_vertical"
-                            android:paddingStart="8dp"
-                            android:text="+ Import Image"
-                            android:textColor="@color/text_primary"
-                            android:textSize="11sp" />
-
-                        <Button
-                            android:id="@+id/btn_menu_flip"
-                            android:layout_width="match_parent"
-                            android:layout_height="28dp"
-                            android:background="@drawable/menu_item_bg"
-                            android:gravity="start|center_vertical"
-                            android:paddingStart="8dp"
-                            android:text="Flip Horizontal"
-                            android:textColor="@color/text_primary"
-                            android:textSize="11sp" />
-
-                        <Button
-                            android:id="@+id/btn_menu_rotate"
-                            android:layout_width="match_parent"
-                            android:layout_height="28dp"
-                            android:background="@drawable/menu_item_bg"
-                            android:gravity="start|center_vertical"
-                            android:paddingStart="8dp"
-                            android:text="Rotate 90 CW"
-                            android:textColor="@color/text_primary"
-                            android:textSize="11sp" />
-
-                        <Button
-                            android:id="@+id/btn_menu_bw"
-                            android:layout_width="match_parent"
-                            android:layout_height="28dp"
-                            android:background="@drawable/menu_item_bg"
-                            android:gravity="start|center_vertical"
-                            android:paddingStart="8dp"
-                            android:text="Toggle B&amp;W"
-                            android:textColor="@color/text_primary"
-                            android:textSize="11sp" />
-
-                        <Button
-                            android:id="@+id/btn_menu_practice"
-                            android:layout_width="match_parent"
-                            android:layout_height="28dp"
-                            android:background="@drawable/menu_item_bg"
-                            android:gravity="start|center_vertical"
-                            android:paddingStart="8dp"
-                            android:text="Send to Practice"
-                            android:textColor="@color/text_primary"
-                            android:textSize="11sp" />
-
-                        <Button
-                            android:id="@+id/btn_menu_arrange"
-                            android:layout_width="match_parent"
-                            android:layout_height="28dp"
-                            android:background="@drawable/menu_item_bg"
-                            android:gravity="start|center_vertical"
-                            android:paddingStart="8dp"
-                            android:text="Auto Arrange"
-                            android:textColor="@color/text_primary"
-                            android:textSize="11sp" />
-
-                        <Button
-                            android:id="@+id/btn_menu_reset"
-                            android:layout_width="match_parent"
-                            android:layout_height="28dp"
-                            android:background="@drawable/menu_item_bg"
-                            android:gravity="start|center_vertical"
-                            android:paddingStart="8dp"
-                            android:text="Reset Transforms"
-                            android:textColor="@color/text_primary"
-                            android:textSize="11sp" />
-
-                        <Button
-                            android:id="@+id/btn_menu_del"
-                            android:layout_width="match_parent"
-                            android:layout_height="28dp"
-                            android:background="@drawable/menu_item_bg"
-                            android:gravity="start|center_vertical"
-                            android:paddingStart="8dp"
-                            android:text="Delete Reference"
-                            android:textColor="@color/text_danger"
-                            android:textSize="11sp" />
-
-                        <Button
-                            android:id="@+id/btn_menu_clear"
-                            android:layout_width="match_parent"
-                            android:layout_height="28dp"
-                            android:background="@drawable/menu_item_bg"
-                            android:gravity="start|center_vertical"
-                            android:paddingStart="8dp"
-                            android:text="Clear Board"
-                            android:textColor="@color/text_danger"
-                            android:textSize="11sp" />
-
-                    </LinearLayout>
-                </ScrollView>
+                <ImageButton android:id="@+id/btn_next" style="@style/ToolCompact" android:contentDescription="@string/next" android:src="@drawable/ic_next" />
+                <View style="@style/ToolDivider" android:layout_height="22dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" />
+                <ImageButton android:id="@+id/btn_p_flip" style="@style/ToolCompact" android:contentDescription="@string/flip" android:src="@drawable/ic_flip" />
+                <ImageButton android:id="@+id/btn_p_bw" style="@style/ToolCompact" android:contentDescription="@string/bw" android:src="@drawable/ic_bw" />
+                <ImageButton android:id="@+id/btn_p_add" style="@style/ToolCompact.Accent" android:contentDescription="@string/add" android:src="@drawable/ic_add" />
+                <ImageButton android:id="@+id/btn_practice_more" style="@style/ToolCompact" android:contentDescription="@string/more" android:src="@drawable/ic_more" android:visibility="gone" />
             </LinearLayout>
-
-        </FrameLayout>
-
-        <!-- Bottom Controls Bar -->
-        <FrameLayout
-            android:id="@+id/bottom_bar"
+        </HorizontalScrollView>
+        <!-- PDF tools -->
+        <HorizontalScrollView
+            android:id="@+id/pdf_tools"
             android:layout_width="match_parent"
-            android:layout_height="42dp"
-            android:background="#2018181B"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp">
+            android:layout_height="46dp"
+            android:overScrollMode="never"
+            android:scrollbars="none"
+            android:visibility="gone">
 
-            <!-- Reference Board Controls -->
-            <HorizontalScrollView
-                android:id="@+id/dock_ref_scroll"
-                android:layout_width="match_parent"
+            <LinearLayout
+                android:layout_width="wrap_content"
                 android:layout_height="match_parent"
-                android:scrollbars="none"
-                android:fillViewport="true">
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="4dp"
+                android:paddingEnd="30dp">
 
-                <LinearLayout
-                    android:id="@+id/ref_controls"
+                <ImageButton android:id="@+id/btn_pdf_open" style="@style/ToolCompact.Accent" android:contentDescription="@string/open" android:src="@drawable/ic_pdf" />
+                <ImageButton android:id="@+id/btn_pdf_recent" style="@style/ToolCompact" android:contentDescription="@string/recent" android:src="@drawable/ic_history" />
+                <View style="@style/ToolDivider" android:layout_height="22dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" />
+                <ImageButton android:id="@+id/btn_pdf_prev" style="@style/ToolCompact" android:contentDescription="@string/prev" android:src="@drawable/ic_page_up" />
+
+                <TextView
+                    android:id="@+id/tv_pdf_page"
                     android:layout_width="wrap_content"
                     android:layout_height="match_parent"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
+                    android:fontFamily="sans-serif-medium"
+                    android:fontFeatureSettings="tnum"
+                    android:gravity="center"
+                    android:minWidth="52dp"
+                    android:text="-"
+                    android:textColor="@color/text_primary"
+                    android:textSize="12sp" />
 
-                    <Button
-                        android:id="@+id/btn_pdf_ref"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="+ PDF"
-                        android:textColor="@color/accent_yellow"
-                        android:textSize="10sp"
-                        android:textStyle="bold" />
-
-                    <Button
-                        android:id="@+id/btn_add_ref"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="+ Image"
-                        android:textColor="@color/text_primary"
-                        android:textSize="10sp" />
-
-                    <Button
-                        android:id="@+id/btn_copy_ref"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="Copy"
-                        android:textColor="@color/accent_yellow"
-                        android:textSize="10sp" />
-
-                    <Button
-                        android:id="@+id/btn_paste_ref"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="Paste"
-                        android:textColor="@color/accent_yellow"
-                        android:textSize="10sp" />
-
-                    <Button
-                        android:id="@+id/btn_flip_ref"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="@string/btn_flip"
-                        android:textColor="@color/text_primary"
-                        android:textSize="10sp" />
-
-                    <Button
-                        android:id="@+id/btn_bw_ref"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="@string/btn_mono"
-                        android:textColor="@color/text_primary"
-                        android:textSize="10sp" />
-
-                    <Button
-                        android:id="@+id/btn_reset_ref"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="@string/btn_reset"
-                        android:textColor="@color/text_primary"
-                        android:textSize="10sp" />
-
-                    <Button
-                        android:id="@+id/btn_del_ref"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="@string/btn_del"
-                        android:textColor="@color/text_danger"
-                        android:textSize="10sp" />
-                </LinearLayout>
-            </HorizontalScrollView>
-
-            <!-- Practice Mode Controls -->
-            <HorizontalScrollView
-                android:id="@+id/dock_practice_scroll"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:scrollbars="none"
-                android:fillViewport="true"
-                android:visibility="gone">
-
-                <LinearLayout
-                    android:id="@+id/practice_controls"
-                    android:layout_width="wrap_content"
-                    android:layout_height="match_parent"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <Button
-                        android:id="@+id/btn_interval"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="2m"
-                        android:textColor="@color/accent_yellow"
-                        android:textSize="10sp"
-                        android:textStyle="bold" />
-
-                    <Button
-                        android:id="@+id/btn_pdf_practice"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="+ PDF"
-                        android:textColor="@color/accent_yellow"
-                        android:textSize="10sp"
-                        android:textStyle="bold" />
-
-                    <Button
-                        android:id="@+id/btn_prev_pose"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="@string/btn_prev"
-                        android:textColor="@color/text_primary"
-                        android:textSize="10sp" />
-
-                    <Button
-                        android:id="@+id/btn_play_pause"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="@string/btn_play"
-                        android:textColor="@color/accent_yellow"
-                        android:textSize="10sp"
-                        android:textStyle="bold" />
-
-                    <Button
-                        android:id="@+id/btn_next_pose"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="@string/btn_next"
-                        android:textColor="@color/text_primary"
-                        android:textSize="10sp" />
-
-                    <Button
-                        android:id="@+id/btn_flip_practice"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="@string/btn_flip"
-                        android:textColor="@color/text_primary"
-                        android:textSize="10sp" />
-
-                    <Button
-                        android:id="@+id/btn_bw_practice"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_margin="2dp"
-                        android:background="@drawable/btn_action_bg"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:text="@string/btn_mono"
-                        android:textColor="@color/text_primary"
-                        android:textSize="10sp" />
-                </LinearLayout>
-            </HorizontalScrollView>
-
-        </FrameLayout>
-
+                <ImageButton android:id="@+id/btn_pdf_next" style="@style/ToolCompact" android:contentDescription="@string/next" android:src="@drawable/ic_page_down" />
+                <View style="@style/ToolDivider" android:layout_height="22dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" />
+                <ImageButton android:id="@+id/btn_pdf_fit" style="@style/ToolCompact" android:contentDescription="@string/fit" android:src="@drawable/ic_fit" />
+                <ImageButton android:id="@+id/btn_pdf_to_board" style="@style/ToolCompact" android:contentDescription="@string/to_board" android:src="@drawable/ic_image" />
+                <ImageButton android:id="@+id/btn_pdf_practice" style="@style/ToolCompact" android:contentDescription="@string/practise" android:src="@drawable/ic_timer" />
+                <ImageButton android:id="@+id/btn_pdf_more" style="@style/ToolCompact" android:contentDescription="@string/more" android:src="@drawable/ic_more" android:visibility="gone" />
+            </LinearLayout>
+        </HorizontalScrollView>
     </LinearLayout>
 
-    <!-- Corner Resize Handle (Bottom Right) -->
-    <View
+    <!-- Drag this corner to resize -->
+    <ImageView
         android:id="@+id/resize_handle"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
         android:layout_gravity="bottom|end"
-        android:background="#20FFFFFF" />
+        android:contentDescription="@string/resize"
+        android:padding="6dp"
+        android:src="@drawable/ic_resize"
+        android:tint="@color/text_muted" />
 
-    <!-- Minimized Floating Bubble -->
+    <!-- Minimised bubble -->
     <FrameLayout
         android:id="@+id/minimized_bubble"
         android:layout_width="56dp"
         android:layout_height="56dp"
         android:layout_gravity="center"
-        android:background="@drawable/minimized_bubble_bg"
+        android:background="@drawable/bg_bubble"
+        android:elevation="6dp"
         android:visibility="gone">
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
+            android:fontFamily="sans-serif-black"
             android:text="REF"
-            android:textColor="@color/text_dark"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textColor="@color/text_on_accent"
+            android:textSize="14sp" />
     </FrameLayout>
 
 </FrameLayout>

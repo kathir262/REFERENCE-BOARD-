@@ -17,3 +17,8 @@ android/**/build/
 android/.idea/
 android/*.iml
 android/**/*.iml
+
+# Play Store upload key and its passwords: keep these private and backed up, never commit
+android/keystore.properties
+android/*.jks
+android/app/*.jks

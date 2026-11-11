@@ -1,33 +1,57 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id 'com.android.application'
     id 'kotlin-android'
 }
 
+// Play Store upload key: put its details in android/keystore.properties (never commit that file).
+//   storeFile=../upload-key.jks
+//   storePassword=...
+//   keyAlias=upload
+//   keyPassword=...
+// Without that file, builds are signed with the old local test key (fine for installing on your own tablet).
+def keystorePropsFile = rootProject.file("keystore.properties")
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
 android {
     namespace 'com.refpad.app'
-    compileSdk 34
+    compileSdk 36
 
     defaultConfig {
         applicationId "com.refpad.app"
         minSdk 24
-        targetSdk 34
-        versionCode 1
-        versionName "1.0.0"
+        // Google Play requires new apps and updates to target Android 16 (API 36).
+        targetSdk 36
+        versionCode 3
+        versionName "1.2.0"
     }
 
     signingConfigs {
         release {
-            storeFile file("release.keystore")
-            storePassword "refpad123"
-            keyAlias "refpad"
-            keyPassword "refpad123"
+            if (keystorePropsFile.exists()) {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            } else {
+                storeFile file("release.keystore")
+                storePassword "refpad123"
+                keyAlias "refpad"
+                keyPassword "refpad123"
+            }
         }
     }
 
     buildTypes {
         release {
             signingConfig signingConfigs.release
-            minifyEnabled false
+            // R8 optimises the code (inlining, dead-code removal) for a smaller, faster app.
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -43,13 +67,19 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = '17'
+    lint {
+        // Lint is slow and memory hungry; skip it during release assembly.
+        checkReleaseBuilds false
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_17
     }
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.22"
-    implementation "androidx.core:core-ktx:1.12.0"
-    implementation "androidx.appcompat:appcompat:1.6.1"
+    // The app only uses the Android framework, so no AndroidX libraries are needed.
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.2.20"
 }

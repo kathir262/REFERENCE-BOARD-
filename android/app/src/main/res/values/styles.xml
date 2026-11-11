@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg_canvas</item>
+        <item name="android:statusBarColor">@color/bg_canvas</item>
+        <item name="android:navigationBarColor">@color/bg_canvas</item>
+        <item name="android:colorPrimary">@color/surface</item>
+        <item name="android:colorPrimaryDark">@color/bg_canvas</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:colorControlActivated">@color/accent</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:alertDialogTheme">@style/AppDialog</item>
+    </style>
+
+    <style name="AppDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@drawable/bg_dialog</item>
+    </style>
+
+    <!-- Main toolbar: icon with a label underneath -->
+    <style name="Tool">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">58dp</item>
+        <item name="android:minWidth">64dp</item>
+        <item name="android:paddingStart">6dp</item>
+        <item name="android:paddingEnd">6dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">6dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/bg_tool</item>
+        <item name="android:drawablePadding">3dp</item>
+        <item name="android:drawableTint">@color/tool_tint</item>
+        <item name="android:textColor">@color/tool_tint</item>
+        <item name="android:textSize">11.5sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <style name="Tool.Accent">
+        <item name="android:drawableTint">@color/tool_tint_accent</item>
+        <item name="android:textColor">@color/tool_tint_accent</item>
+    </style>
+
+    <style name="Tool.Danger">
+        <item name="android:drawableTint">@color/tool_tint_danger</item>
+        <item name="android:textColor">@color/tool_tint_danger</item>
+    </style>
+
+    <!-- Floating window toolbar: icon only -->
+    <style name="ToolCompact">
+        <item name="android:layout_width">40dp</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:background">@drawable/bg_tool</item>
+        <item name="android:scaleType">center</item>
+        <item name="android:tint">@color/tool_tint</item>
+    </style>
+
+    <style name="ToolCompact.Accent">
+        <item name="android:tint">@color/tool_tint_accent</item>
+    </style>
+
+    <style name="ToolCompact.Danger">
+        <item name="android:tint">@color/tool_tint_danger</item>
+    </style>
+
+    <style name="ToolDivider">
+        <item name="android:layout_width">1dp</item>
+        <item name="android:layout_height">28dp</item>
+        <item name="android:layout_marginStart">6dp</item>
+        <item name="android:layout_marginEnd">6dp</item>
+        <item name="android:layout_gravity">center_vertical</item>
+        <item name="android:background">@color/stroke_strong</item>
+    </style>
+
+    <style name="IconButton">
+        <item name="android:layout_width">44dp</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:background">@drawable/bg_icon_button</item>
+        <item name="android:scaleType">center</item>
+        <item name="android:tint">@color/text_primary</item>
+    </style>
+
+    <style name="IconButton.Compact">
+        <item name="android:layout_width">34dp</item>
+        <item name="android:layout_height">34dp</item>
+    </style>
+
+    <style name="SegmentItem">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">match_parent</item>
+        <item name="android:minWidth">@dimen/seg_min_width</item>
+        <item name="android:paddingStart">@dimen/seg_padding</item>
+        <item name="android:paddingEnd">@dimen/seg_padding</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/bg_segment_item</item>
+        <item name="android:textColor">@color/segment_text</item>
+        <item name="android:textSize">13.5sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <style name="SegmentItem.Compact">
+        <item name="android:minWidth">0dp</item>
+        <item name="android:paddingStart">9dp</item>
+        <item name="android:paddingEnd">9dp</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="ButtonPrimary">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">50dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/bg_button_primary</item>
+        <item name="android:textColor">@color/text_on_accent</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <style name="ButtonSecondary">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">46dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/bg_button_secondary</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+</resources>

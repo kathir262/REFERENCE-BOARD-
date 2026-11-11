@@ -1,0 +1,5 @@
+# Baseline profile: Google Play compiles everything listed here ahead of time when the app is installed,
+# so the very first launch, scroll, zoom and page flip run as smoothly as later ones (no warm-up stutter).
+# RefPad is small, so all of its own code is included.
+HSPLcom/refpad/app/**->**(**)**
+Lcom/refpad/app/**;

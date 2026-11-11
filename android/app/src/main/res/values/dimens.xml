@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phones (narrow screens). Tablets use values-sw600dp. -->
+<resources>
+    <dimen name="seg_min_width">0dp</dimen>
+    <dimen name="seg_padding">12dp</dimen>
+    <dimen name="seg_gap">6dp</dimen>
+    <dimen name="seg_margin_start">4dp</dimen>
+    <dimen name="empty_card_width">330dp</dimen>
+</resources>

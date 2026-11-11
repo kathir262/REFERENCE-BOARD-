@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="seg_min_width">76dp</dimen>
+    <dimen name="seg_padding">16dp</dimen>
+    <dimen name="seg_gap">10dp</dimen>
+    <dimen name="seg_margin_start">22dp</dimen>
+    <dimen name="empty_card_width">400dp</dimen>
+</resources>

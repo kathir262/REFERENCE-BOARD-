@@ -1,131 +1,92 @@
 package com.refpad.app
 
-import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
-import android.graphics.Paint
 import android.graphics.RectF
+import kotlin.math.abs
+import kotlin.math.max
 
+/**
+ * An image placed on the board. (x, y) is the top-left corner of the unrotated image in board units;
+ * rotation and flipping happen around the image center.
+ */
 class RefBoardItem(
-    val bitmap: Bitmap,
-    var x: Float = 100f,
-    var y: Float = 100f,
-    var scale: Float = 1.0f,
-    var isFlipped: Boolean = false,
-    var isGrayscale: Boolean = false,
-    var rotationDegrees: Float = 0f,
-    var isSelected: Boolean = false
+    val image: RefImage,
+    var x: Float = 0f,
+    var y: Float = 0f,
+    var scale: Float = defaultScaleFor(image),
+    var rotation: Int = 0,
+    var flipped: Boolean = false,
+    var grayscale: Boolean = false
 ) {
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#facc15") // Studio Yellow
-        style = Paint.Style.STROKE
-        strokeWidth = 6f
-    }
-    private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#facc15")
-        style = Paint.Style.FILL
-    }
-    private val badgeBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#facc15")
-        style = Paint.Style.FILL
-    }
-    private val badgeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#09090b")
-        textSize = 22f
-        isFakeBoldText = true
+    companion object {
+        /** Every new image starts with its long side at this many board units, whatever its pixel size. */
+        const val DEFAULT_LONG_SIDE = 700f
+        const val MIN_SCALE = 0.02f
+        const val MAX_SCALE = 10f
+
+        fun defaultScaleFor(image: RefImage): Float =
+            (DEFAULT_LONG_SIDE / max(image.width, image.height).coerceAtLeast(1)).coerceIn(MIN_SCALE, MAX_SCALE)
     }
 
-    private val grayscaleFilter by lazy {
-        val matrix = ColorMatrix().apply { setSaturation(0f) }
-        ColorMatrixColorFilter(matrix)
+    val width: Float get() = image.width * scale
+    val height: Float get() = image.height * scale
+    private val isRotated90: Boolean get() = rotation % 180 != 0
+    val effectiveWidth: Float get() = if (isRotated90) height else width
+    val effectiveHeight: Float get() = if (isRotated90) width else height
+    val centerX: Float get() = x + width / 2f
+    val centerY: Float get() = y + height / 2f
+
+    /** Writes the on-board bounds (after rotation) into [out] without allocating. */
+    fun boundsInto(out: RectF) {
+        val hw = effectiveWidth / 2f
+        val hh = effectiveHeight / 2f
+        val cx = centerX
+        val cy = centerY
+        out.set(cx - hw, cy - hh, cx + hw, cy + hh)
     }
 
-    val width: Float
-        get() = bitmap.width * scale
+    fun hitTest(px: Float, py: Float): Boolean =
+        abs(px - centerX) <= effectiveWidth / 2f && abs(py - centerY) <= effectiveHeight / 2f
 
-    val height: Float
-        get() = bitmap.height * scale
-
-    val isRotated90: Boolean
-        get() = (Math.abs(rotationDegrees.toInt()) % 180) != 0
-
-    val effectiveWidth: Float
-        get() = if (isRotated90) height else width
-
-    val effectiveHeight: Float
-        get() = if (isRotated90) width else height
-
-    val bounds: RectF
-        get() {
-            val centerX = x + width / 2f
-            val centerY = y + height / 2f
-            val ew = effectiveWidth
-            val eh = effectiveHeight
-            return RectF(centerX - ew / 2f, centerY - eh / 2f, centerX + ew / 2f, centerY + eh / 2f)
-        }
-
-    fun hitTest(touchX: Float, touchY: Float): Boolean {
-        return bounds.contains(touchX, touchY)
+    /** Moves the item so its rotated bounds start at (left, top). */
+    fun moveBoundsTo(left: Float, top: Float) {
+        val cx = left + effectiveWidth / 2f
+        val cy = top + effectiveHeight / 2f
+        x = cx - width / 2f
+        y = cy - height / 2f
     }
 
-    fun rotateCW() {
-        rotationDegrees = (rotationDegrees + 90f) % 360f
+    /** Resizes the item in place (the center stays put). */
+    fun setScaleAroundCenter(newScale: Float) {
+        val cx = centerX
+        val cy = centerY
+        scale = newScale.coerceIn(MIN_SCALE, MAX_SCALE)
+        x = cx - width / 2f
+        y = cy - height / 2f
     }
 
-    fun rotateCCW() {
-        rotationDegrees = (rotationDegrees - 90f) % 360f
-    }
+    fun rotateCW() { rotation = (rotation + 90) % 360 }
+    fun rotateCCW() { rotation = (rotation + 270) % 360 }
 
     fun resetTransforms() {
-        isFlipped = false
-        isGrayscale = false
-        rotationDegrees = 0f
-        scale = 0.5f
+        flipped = false
+        grayscale = false
+        rotation = 0
+        setScaleAroundCenter(defaultScaleFor(image))
     }
 
-    fun draw(canvas: Canvas) {
-        val centerX = x + width / 2f
-        val centerY = y + height / 2f
-
-        canvas.save()
-
-        // Grayscale filter
-        paint.colorFilter = if (isGrayscale) grayscaleFilter else null
-
-        // Rotation & Flip around item center
-        if (rotationDegrees != 0f) {
-            canvas.rotate(rotationDegrees, centerX, centerY)
+    fun draw(canvas: Canvas, scratch: RectF, boardScale: Float) {
+        val cx = centerX
+        val cy = centerY
+        val needsTransform = rotation != 0 || flipped
+        if (needsTransform) {
+            canvas.save()
+            if (rotation != 0) canvas.rotate(rotation.toFloat(), cx, cy)
+            if (flipped) canvas.scale(-1f, 1f, cx, cy)
         }
-        if (isFlipped) {
-            canvas.scale(-1f, 1f, centerX, centerY)
-        }
-
-        // Draw scaled bitmap
-        val destRect = RectF(x, y, x + width, y + height)
-        canvas.drawBitmap(bitmap, null, destRect, paint)
-
-        canvas.restore()
-
-        // Draw Studio Yellow border & handles when selected
-        if (isSelected) {
-            val r = bounds
-            canvas.drawRect(r, borderPaint)
-
-            // Draw 4 corner handles
-            val handleSize = 12f
-            canvas.drawRect(r.left - handleSize / 2, r.top - handleSize / 2, r.left + handleSize / 2, r.top + handleSize / 2, handlePaint)
-            canvas.drawRect(r.right - handleSize / 2, r.top - handleSize / 2, r.right + handleSize / 2, r.top + handleSize / 2, handlePaint)
-            canvas.drawRect(r.left - handleSize / 2, r.bottom - handleSize / 2, r.left + handleSize / 2, r.bottom + handleSize / 2, handlePaint)
-            canvas.drawRect(r.right - handleSize / 2, r.bottom - handleSize / 2, r.right + handleSize / 2, r.bottom + handleSize / 2, handlePaint)
-
-            // Draw yellow SELECTED badge at top-left
-            val badgeWidth = 110f
-            val badgeHeight = 28f
-            canvas.drawRoundRect(r.left, r.top - badgeHeight - 4, r.left + badgeWidth, r.top - 4, 6f, 6f, badgeBgPaint)
-            canvas.drawText("SELECTED", r.left + 8f, r.top - 10f, badgeTextPaint)
-        }
+        scratch.set(x, y, x + width, y + height)
+        val bmp = image.bitmapFor(max(width, height) * boardScale)
+        if (canvas.canDraw(bmp)) canvas.drawBitmap(bmp, null, scratch, if (grayscale) Paints.gray else Paints.normal)
+        if (needsTransform) canvas.restore()
     }
 }

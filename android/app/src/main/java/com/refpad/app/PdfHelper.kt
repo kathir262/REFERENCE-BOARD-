@@ -1,100 +1,238 @@
 package com.refpad.app
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
-import android.net.Uri
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.os.Process
+import android.util.Log
+import android.util.LruCache
 import java.io.File
-import java.io.FileOutputStream
+import kotlin.math.max
+import kotlin.math.roundToInt
 
+/** Shared PDF helpers. */
 object PdfHelper {
+    /** Renders one page onto white, long side [longSide] px. Returns a normal (CPU) bitmap. */
+    fun renderPage(page: PdfRenderer.Page, longSide: Int): Bitmap {
+        val s = longSide.toFloat() / max(page.width, page.height).coerceAtLeast(1)
+        val w = max(1, (page.width * s).roundToInt())
+        val h = max(1, (page.height * s).roundToInt())
+        // PdfRenderer can only draw into ARGB_8888 bitmaps.
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        bmp.eraseColor(Color.WHITE)
+        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        bmp.setHasAlpha(false)
+        return bmp
+    }
 
-    fun renderPdfPages(context: Context, uri: Uri, maxPages: Int = 30): List<Bitmap> {
-        val bitmaps = mutableListOf<Bitmap>()
-        val tempFile = File(context.cacheDir, "temp_render_${System.currentTimeMillis()}.pdf")
+    /** Number of pages, or -1 if the file is not a readable PDF (damaged or password protected). */
+    fun pageCount(file: File): Int = try {
+        PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)).use { it.pageCount }
+    } catch (e: Exception) {
+        Log.w("RefPad", "Cannot open PDF ${file.name}", e)
+        -1
+    }
 
-        try {
-            // 1. Copy the PDF input stream to a local cache file so the ParcelFileDescriptor is 100% seekable
-            var copied = false
-            try {
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    FileOutputStream(tempFile).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                copied = true
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-
-            // Fallback via ParcelFileDescriptor if stream copy failed
-            if (!copied || !tempFile.exists() || tempFile.length() == 0L) {
-                try {
-                    context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                        java.io.FileInputStream(pfd.fileDescriptor).use { input ->
-                            FileOutputStream(tempFile).use { output ->
-                                input.copyTo(output)
-                            }
-                        }
-                    }
-                    copied = true
-                } catch (e2: Exception) {
-                    e2.printStackTrace()
-                }
-            }
-
-            if (!copied || !tempFile.exists() || tempFile.length() == 0L) {
-                return emptyList()
-            }
-
-            // 2. Open seekable ParcelFileDescriptor from the local cached file
-            ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
-                PdfRenderer(pfd).use { renderer ->
-                    val pageCount = Math.min(renderer.pageCount, maxPages)
-                    for (i in 0 until pageCount) {
-                        try {
-                            val page = renderer.openPage(i)
-
-                            // Keep dimensions sharp for anatomy/reference but memory-safe
-                            val maxDim = 1024
-                            var w = page.width
-                            var h = page.height
-                            if (w > maxDim || h > maxDim) {
-                                val scale = maxDim.toFloat() / Math.max(w, h)
-                                w = Math.max(1, (w * scale).toInt())
-                                h = Math.max(1, (h * scale).toInt())
-                            }
-
-                            // Use ARGB_8888 (Mandatory for Android PdfRenderer native rendering engine)
-                            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                            bitmap.eraseColor(Color.WHITE)
-                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                            page.close()
-
-                            bitmaps.add(bitmap)
-                        } catch (oom: OutOfMemoryError) {
-                            oom.printStackTrace()
-                            break
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
-            try {
-                if (tempFile.exists()) {
-                    tempFile.delete()
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
+    /** Height/width of every page (needed to lay out the reader), or null if the PDF cannot be read. */
+    fun pageAspects(file: File, progress: (done: Int, total: Int) -> Unit): FloatArray? = try {
+        PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)).use { r ->
+            val n = r.pageCount
+            if (n <= 0) return null
+            FloatArray(n) { i ->
+                if (i % 40 == 0) progress(i, n)
+                r.openPage(i).use { p -> p.height.toFloat() / p.width.coerceAtLeast(1) }
             }
         }
+    } catch (e: Exception) {
+        Log.w("RefPad", "Cannot read PDF ${file.name}", e)
+        null
+    }
+}
 
-        return bitmaps
+/**
+ * Renders practice-mode PDF pages only when they are needed (current page plus its neighbours),
+ * keeping a small cache. A 300-page art book therefore uses about as much memory as 5 pages.
+ */
+object PdfPages {
+    private const val TAG = "RefPad"
+    const val RENDER_LONG_SIDE = 1800
+    /** Room for the pages on screen plus their neighbours at full quality. */
+    private const val CACHE_BYTES = 40 * 1024 * 1024
+
+    /** Width in pixels of the cached rendering of a page with this height/width ratio. */
+    fun baseWidth(aspect: Float): Float = if (aspect >= 1f) RENDER_LONG_SIDE / aspect else RENDER_LONG_SIDE.toFloat()
+
+    private val main = Handler(Looper.getMainLooper())
+    private val worker: Handler = HandlerThread("refpad-pdf", Process.THREAD_PRIORITY_BACKGROUND).let {
+        it.start()
+        Handler(it.looper)
+    }
+
+    private val cache = object : LruCache<String, Bitmap>(CACHE_BYTES) {
+        override fun sizeOf(key: String, value: Bitmap) = value.width * value.height * 4
+    }
+
+    // Main-thread state
+    private val inFlight = HashSet<String>()
+    private val failed = HashSet<String>()
+    private val listeners = ArrayList<() -> Unit>()
+
+    /** Pages each screen currently wants; renders for anything else are skipped. */
+    @Volatile
+    private var wanted: Set<String> = emptySet()
+    private val wantedByOwner = HashMap<Any, Set<String>>()
+
+    // Worker-thread state: keep the current PDF open while flipping through it.
+    private var openDocId: String? = null
+    private var openRenderer: PdfRenderer? = null
+    private val closeIdle = Runnable { closeDoc() }
+
+    private fun key(docId: String, page: Int) = "$docId#$page"
+
+    fun get(docId: String, page: Int): Bitmap? = cache.get(key(docId, page))
+
+    fun hasFailed(docId: String, page: Int) = failed.contains(key(docId, page))
+
+    fun addListener(l: () -> Unit) {
+        if (!listeners.contains(l)) listeners.add(l)
+    }
+
+    fun removeListener(l: () -> Unit) {
+        listeners.remove(l)
+    }
+
+    /**
+     * Declares which pages a screen ([owner]) needs right now (most important first) and renders any that are missing.
+     * The full screen and the floating window can both ask at the same time.
+     */
+    fun focus(owner: Any, pages: List<Pose.PdfPage>) {
+        wantedByOwner[owner] = pages.mapTo(HashSet()) { key(it.docId, it.page) }
+        wanted = wantedByOwner.values.flatMapTo(HashSet()) { it }
+        for (p in pages) request(p.docId, p.page)
+    }
+
+    fun release(owner: Any) {
+        if (wantedByOwner.remove(owner) != null) wanted = wantedByOwner.values.flatMapTo(HashSet()) { it }
+    }
+
+    /**
+     * Renders part of a page at screen sharpness (used when zoomed into a page).
+     * [displayWidth] is the page's width on screen; ([x], [y], [w], [h]) is the wanted area in those pixels.
+     * [isStale] is checked just before the slow work starts, so outdated requests are skipped.
+     */
+    fun renderDetail(
+        docId: String, page: Int, displayWidth: Float,
+        x: Float, y: Float, w: Int, h: Int,
+        isStale: () -> Boolean, done: (Bitmap?) -> Unit
+    ) {
+        worker.post {
+            var result: Bitmap? = null
+            if (!isStale()) {
+                worker.removeCallbacks(closeIdle)
+                try {
+                    val renderer = rendererFor(docId)
+                    if (renderer != null && page in 0 until renderer.pageCount) {
+                        renderer.openPage(page).use { p ->
+                            val s = displayWidth / p.width.coerceAtLeast(1)
+                            val bmp = Bitmap.createBitmap(w.coerceAtLeast(1), h.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+                            bmp.eraseColor(Color.WHITE)
+                            val m = android.graphics.Matrix()
+                            m.setScale(s, s)
+                            m.postTranslate(-x, -y)
+                            p.render(bmp, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            bmp.setHasAlpha(false)
+                            result = ImageLoader.toDisplay(bmp)
+                        }
+                    }
+                } catch (oom: OutOfMemoryError) {
+                    Log.w(TAG, "Out of memory rendering detail", oom)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Detail render failed", e)
+                    closeDoc()
+                } finally {
+                    worker.postDelayed(closeIdle, 30_000)
+                }
+            }
+            val out = result
+            main.post { done(out) }
+        }
+    }
+
+    private fun request(docId: String, page: Int) {
+        val k = key(docId, page)
+        if (cache.get(k) != null || inFlight.contains(k) || failed.contains(k)) return
+        inFlight.add(k)
+        worker.post {
+            val stillWanted = wanted.contains(k)
+            val bmp = if (stillWanted) render(docId, page) else null
+            main.post {
+                inFlight.remove(k)
+                if (bmp != null) {
+                    cache.put(k, bmp)
+                    for (l in listeners.toTypedArray()) l()
+                } else if (stillWanted) {
+                    failed.add(k)
+                    for (l in listeners.toTypedArray()) l()
+                }
+            }
+        }
+    }
+
+    private fun render(docId: String, page: Int): Bitmap? {
+        worker.removeCallbacks(closeIdle)
+        try {
+            val renderer = rendererFor(docId) ?: return null
+            if (page < 0 || page >= renderer.pageCount) return null
+            val bmp = renderer.openPage(page).use { PdfHelper.renderPage(it, RENDER_LONG_SIDE) }
+            return ImageLoader.toDisplay(bmp)
+        } catch (oom: OutOfMemoryError) {
+            Log.w(TAG, "Out of memory rendering page $page", oom)
+            main.post { cache.evictAll() }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not render page $page", e)
+            closeDoc()
+        } finally {
+            // Release the PDF if nobody flips a page for a while.
+            worker.postDelayed(closeIdle, 30_000)
+        }
+        return null
+    }
+
+    private fun rendererFor(docId: String): PdfRenderer? {
+        if (openDocId == docId) openRenderer?.let { return it }
+        closeDoc()
+        val file = Storage.pdfFile(docId)
+        if (!file.exists()) return null
+        val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+        return try {
+            PdfRenderer(pfd).also {
+                openRenderer = it
+                openDocId = docId
+            }
+        } catch (e: Exception) {
+            pfd.close()
+            throw e
+        }
+    }
+
+    private fun closeDoc() {
+        try {
+            openRenderer?.close()
+        } catch (_: Exception) {
+        }
+        openRenderer = null
+        openDocId = null
+    }
+
+    /** Frees cached pages when Android is short on memory. */
+    fun trim(all: Boolean) {
+        main.post {
+            if (all) cache.evictAll() else cache.trimToSize(CACHE_BYTES / 4)
+            failed.clear()
+        }
     }
 }
