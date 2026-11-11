@@ -28,12 +28,13 @@
   <p class="date">Effective 11 November 2026</p>
   <span class="badge">Free &middot; No ads &middot; No tracking &middot; No data collected</span>
 
-  <p>RefPad is a free Android app for artists: a reference board, timed gesture practice, a PDF reader
-  and a floating reference window. It has <b>no ads, no in-app purchases, no accounts and no analytics</b>.</p>
+  <p>RefPad is a free app for artists on Android and Windows: a reference board, timed gesture practice, a PDF
+  reader and a floating reference window. It has <b>no ads, no in-app purchases, no accounts and no analytics</b>.</p>
 
   <h2>What RefPad collects</h2>
   <p><b>Nothing.</b> RefPad does not collect, sell or share any personal data or usage data.
-  The app does not have the Internet permission, so it cannot send anything off your device.</p>
+  On Android the app does not have the Internet permission, so it cannot send anything off your device.
+  On Windows the only connection RefPad makes is the optional update check described below.</p>
 
   <h2>Your images and PDFs</h2>
   <p>When you add images or PDFs, RefPad keeps a copy in its own private storage on your device, so your board,
@@ -54,6 +55,21 @@
       It is only used when you turn the floating window on.</li>
     <li><b>Foreground service</b> &mdash; keeps the floating window running while you draw, with a notification
       you can use to close it.</li>
+  </ul>
+
+  <h2>RefPad for Windows</h2>
+  <ul>
+    <li><b>Your files stay on your PC.</b> Pictures you add to the board are copied into RefPad's own folder
+      (<code>%LOCALAPPDATA%\RefPad</code>) so the board keeps working if the originals move. PDFs and practice
+      folders are opened where they are. Nothing is uploaded.</li>
+    <li><b>Update check.</b> At most once a day, and when you click <i>Check for updates</i>, RefPad asks GitHub
+      (github.com, where RefPad is published) whether a newer version exists, and downloads it only if you choose
+      to update. The request contains no personal information and nothing about your files; like any website,
+      GitHub can see your IP address (see GitHub's privacy statement). You can turn automatic checks off in
+      <i>About RefPad</i>.</li>
+    <li><b>Clipboard.</b> RefPad reads the clipboard only when you paste, and writes to it only when you copy.</li>
+    <li><b>Removing your data.</b> Clear the board and practice list in the app, or delete
+      <code>%LOCALAPPDATA%\RefPad</code>. Uninstalling removes the program but keeps that folder until you delete it.</li>
   </ul>
 
   <h2>Children</h2>

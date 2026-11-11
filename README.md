@@ -1,187 +1,117 @@
-# Reference Board (RefPad)
+# RefPad: Reference Board
 
-Cross-platform companion application fusing **BeeRef** (infinite reference moodboard with image transforms, arrangement, and context menus) and **Line of Action** (timed gesture and figure drawing practice engine with circular countdown HUD).
+A free reference companion for artists, for **Windows** and **Android**:
 
-Available for **Windows Desktop** (standalone `.exe`) and **Android Mobile & Tablets** (floating overlay `.apk` for Clip Studio Paint, HiPaint, Infinite Painter, and ibis Paint X).
+- **Reference board** – an endless board for pictures and PDF pages. Move, resize, flip, rotate, black & white, copy and paste. Saved automatically.
+- **Gesture practice** – timed poses from a PDF art book, a folder, or your board images (30 s to 10 min per pose). Pause, skip, flip, black & white, zoom into a pose.
+- **PDF reader** – smooth scrolling and sharp zoom; even huge books open instantly because pages render as you scroll. Send a page to the board or practise from it. Remembers where you were.
+- **Float on top** – a small window that stays above your drawing app (Clip Studio Paint, Krita, Photoshop, ibisPaint, Infinite Painter…), with adjustable see-through.
 
----
-
-## One-Click Downloads
-
-### Desktop (Windows 10 / 11 64-bit)
-- **Direct Standalone Executable**: **[ReferenceBoard.exe (95.9 MB)](https://github.com/kathir262/REFERENCE-BOARD-/releases/download/v1.0.0/ReferenceBoard.exe)**
-  - No Python, DLLs, or installation required. Just download and double-click to launch.
-- **Portable ZIP Archive**: **[ReferenceBoard-Windows-x64.zip (96.5 MB)](https://github.com/kathir262/REFERENCE-BOARD-/releases/download/v1.0.0/ReferenceBoard-Windows-x64.zip)**
-
-### Mobile & Tablets (Android 7.0+)
-- **Direct Standalone APK**: **[ReferenceBoard.apk (2.38 MB)](https://github.com/kathir262/REFERENCE-BOARD-/releases/download/v1.0.0/ReferenceBoard.apk)**
-  - Direct download and install for Android phones and drawing tablets (Samsung Galaxy Tab, Xiaomi Pad, Pixel Tablet).
-  - Floats directly over full-screen drawing applications.
+Free, no ads, no accounts, no tracking. See the [privacy policy](docs/privacy-policy.html).
 
 ---
 
-## Architecture & Concept
+## Download
 
-Reference Board bridges the gap between passive reference organization and active gesture practice:
+### Windows 10 / 11 (64-bit)
+1. Download **`RefPad-<version>-windows-x64.zip`** from the [latest release](https://github.com/kathir262/REFERENCE-BOARD-/releases/latest).
+2. Unzip it. You get a `RefPad` folder.
+3. Double-click **`Install RefPad.cmd`** inside it (no administrator rights needed). This copies RefPad to `%LOCALAPPDATA%\Programs\RefPad`, adds Start menu and desktop shortcuts, and an entry in *Settings → Apps* for uninstalling.
+   Or just run `RefPad.exe` from the folder (portable).
 
-1. **Reference Board Mode (BeeRef Architecture)**:
-   - Infinite 2D zoomable and pannable canvas.
-   - 1-to-1 BeeRef image operations: horizontal/vertical flips, 90-degree rotations, grayscale value study, color inversion, opacity slider, crop, and Z-order layering.
-   - Optimal automatic packing and alignment algorithms.
-   - Vibrant studio yellow highlight border (`#facc15`) on selected references with anchor handles and floating badge.
-   - Dual context menus: focused image menu on right-clicking references, and complete BeeRef system menu on the floating dock.
+RefPad updates itself: it checks GitHub at most once a day (you can turn this off in *⋮ → About RefPad*) and offers new versions with an **UPDATE** button. Your board is kept.
 
-2. **Practice Mode (Line of Action Architecture)**:
-   - Timed gesture drawing sessions with countdown timer HUD.
-   - Configurable pose durations: 30s, 45s, 1m, 2m, 3m, 5m, 10m, and warm-up ladders.
-   - Clean controls: pause, skip, restart, flip, grayscale, and pose chimes.
-
-3. **Strict Mode Separation**:
-   - Reference Board and Practice Mode operate independently.
-   - Smart Import Destination selector routes incoming references (PDFs, images, folders) to Reference Board, Practice Mode, or both.
-
-4. **Zero Purple Studio Dark Theme**:
-   - Pure Monochrome and Dark Studio palette for zero color distortion while painting.
-   - Studio Yellow accents matching studio grade monitor standards.
+### Android
+On Google Play (see [play-store/README.md](play-store/README.md) for the publishing guide).
 
 ---
 
-## Mobile & Tablet (Android) Companion
+## Using RefPad on Windows
 
-The Android version is built specifically for digital illustrators and comic artists:
+| | Mouse | Keyboard |
+|---|---|---|
+| **Switch mode** | Board / Practice / PDF tabs | `Ctrl+1` `Ctrl+2` `Ctrl+3` |
+| **Add pictures, PDFs, folders** | `+` button, or drop files anywhere | `Ctrl+I` pictures, `Ctrl+O` PDF, `Ctrl+V` paste |
+| **Float on top of other apps** | float button in the top bar | `Ctrl+T` |
+| **Keep the full window on top** | ⋮ → Keep window on top | `Ctrl+Shift+T` |
+| **Full screen** | ⋮ → Full screen | `F11` |
 
-- **Floating Overlay over Drawing Apps**:
-  - Uses Android Picture-in-Picture / overlay window capabilities to float directly above Clip Studio Paint, HiPaint, Infinite Painter, ibis Paint X, and Sketchbook.
-  - Freely draggable from the header and resizable from the bottom-right corner.
-  - Minimize button collapses the window into an unobtrusive floating bubble while working on canvas.
-- **Multi-Touch & Stylus Engine**:
-  - 2-finger pinch-to-zoom and 2-finger pan.
-  - 1-finger select and reposition individual reference tiles.
-  - Hardware stylus (S-Pen / Wacom) detection with palm rejection. S-Pen primary button toggles play/pause or selection.
-- **Native PDF Reference Ingestion**:
-  - High-resolution hardware rendering of multi-page anatomy books and sketchbooks directly from device storage.
-- **Quick Interval Presets**:
-  - One-tap interval selector (30s, 1m, 2m, 5m) with automatic pose progression.
+**Board** – scroll to zoom, drag empty space (or middle button, or Space + drag) to move around, drag an image to move it, drag the yellow corner dot to resize, double-click an image to zoom to it, double-click empty space to fit everything, right-click for more.
+`H` flip · `G` black & white · `R` / `Shift+R` rotate · `Ctrl+C` copy · `Del` delete (with UNDO) · `Ctrl+A` select all · `Ctrl`-click to select several · `PgUp` / `PgDn` front / back · `F` fit · `Ctrl+Shift+A` arrange in rows.
 
----
+**Practice** – `Space` play / pause · `←` `→` previous / next (or drag sideways) · `Home` restart the pose · scroll to zoom into a pose, double-click to reset · `H` flip · `G` black & white.
 
-## Keyboard and Mouse Shortcuts (Desktop)
+**PDF** – scroll, drag, or use `PgUp` / `PgDn` / `Space` · `Ctrl` + scroll to zoom · double-click or `F` switches between *fit width* and *whole page* · drag the scroll thumb on the right to jump through a long book · right-click a page to send it to the board or practise from it.
 
-### Navigation & Canvas
-| Shortcut | Action |
-| :--- | :--- |
-| `Left Click + Drag` | Move reference image on canvas |
-| `Middle Click + Drag` | Pan canvas |
-| `Space + Left Drag` | Pan canvas (alternative) |
-| `Mouse Wheel` | Smooth zoom in / out |
-| `Tab` | Toggle between Reference Board and Practice Mode |
-| `1` or `F` | Fit entire scene (all references in view) |
-| `2` | Fit selected reference in view |
-| `Double Click Item` | Focus and fit item in view |
-
-### Image Transforms (BeeRef)
-| Shortcut | Action |
-| :--- | :--- |
-| `H` | Flip horizontally (mirror check) |
-| `V` | Flip vertically |
-| `G` | Toggle grayscale (tonal value check) |
-| `I` | Invert colors |
-| `R` | Reset all image transformations |
-| `Shift + O` or `P` | Optimal auto-pack and arrange references |
-| `Shift + H` | Normalize height across selected references |
-| `Shift + W` | Normalize width across selected references |
-| `Shift + S` | Normalize size (area) across selected references |
-| `PgUp` | Raise reference to top |
-| `PgDown` | Lower reference to bottom |
-
-### File & Session Operations
-| Shortcut | Action |
-| :--- | :--- |
-| `Ctrl + O` | Open Reference Board file |
-| `Ctrl + S` | Save Reference Board file |
-| `Ctrl + Shift + S` | Save Reference Board As |
-| `Ctrl + Shift + E` | Export canvas scene as PNG/JPG image |
-| `Ctrl + I` | Insert images or PDF books |
-| `Ctrl + T` | Add sticky text note to canvas |
-| `Ctrl + C` / `Ctrl + V` | Copy / Paste reference image |
-| `Del` | Delete selected reference |
-| `Ctrl + A` | Select all references |
-| `Ctrl + Shift + A` | Deselect all |
-| `T` | Toggle Always-On-Top pin |
-| `F11` | Toggle Fullscreen |
-| `F1` | Open Shortcuts Help Dialog |
-
-### Practice Mode Controls
-| Shortcut | Action |
-| :--- | :--- |
-| `Space` | Play / Pause gesture timer |
-| `Right Arrow` or `D` | Skip to next pose |
-| `Left Arrow` or `A` | Go back to previous pose |
-| `R` | Restart timer for current pose |
+The window adapts to any width: when space runs out, tools move into a **More** menu instead of overlapping.
 
 ---
 
-## Project Structure
+## Building from source
 
-```text
-├── android/                    # Android Native Mobile & Tablet Application
-│   ├── app/
-│   │   ├── src/main/java/com/refpad/app/
-│   │   │   ├── MainActivity.kt           # SAF file pickers and permissions
-│   │   │   ├── FloatingOverlayService.kt # Floating overlay window manager
-│   │   │   ├── RefCanvasView.kt          # Touch & stylus reference canvas
-│   │   │   ├── RefBoardItem.kt           # Yellow highlighted reference model
-│   │   │   ├── PdfHelper.kt              # Native PDF hardware page renderer
-│   │   │   └── DataManager.kt            # Shared reference & practice state
-│   │   └── src/main/res/                 # Zero purple dark studio UI layouts
-│   ├── build.gradle
-│   └── settings.gradle
-├── refpad/                     # Python Desktop Engine
-│   ├── engine/
-│   │   ├── audio.py            # Synthesized audio feedback cues
-│   │   ├── session_engine.py   # Practice session countdown state machine
-│   │   └── source_manager.py   # Multi-format image & PDF ingestion
-│   ├── models/
-│   │   ├── board.py            # Board serialization (.refpad / .bee JSON format)
-│   │   └── item.py             # RefItem core model & transformation pipeline
-│   ├── ui/
-│   │   ├── action_view.py      # Line of Action gesture practice viewport
-│   │   ├── beeref_menu.py      # 1-to-1 BeeRef menu engine & import destination dialog
-│   │   ├── canvas_item.py      # Movable reference tile with yellow selection border
-│   │   ├── canvas_view.py      # Infinite 2D graphics scene & layout arrange engine
-│   │   ├── floating_dock.py    # Auto-dimming glass control toolbar
-│   │   ├── icons.py            # Vector icon renderers
-│   │   ├── main_window.py      # Frameless container, title bar, resize handlers
-│   │   ├── themes.py           # Color palettes (Pure B&W default, zero purple)
-│   │   ├── timer_hud.py        # Circular countdown ring display
-│   │   └── widgets.py          # Custom UI components
-│   └── main.py                 # Application entrypoint
-├── tests/
-│   └── test_beeref_split.py    # Automated test suite
-├── run.py                      # Root launcher script
-├── requirements.txt            # Python dependencies
-└── README.md                   # Documentation
-```
-
----
-
-## Building from Source
-
-### Windows Desktop Executable
+### Windows
 ```bash
-pyinstaller --noconfirm --onefile --windowed --name "ReferenceBoard" --add-data "refpad;refpad" --exclude-module "pymupdf.layout" run.py
+py -3.12 -m pip install -r requirements.txt
+py -3.12 run.py                      # run from source (or start.bat)
+py -3.12 -m pytest tests             # tests
+py -3.12 tools/build_windows.py      # build the app and the release zip
 ```
-Output: `dist/ReferenceBoard.exe`
+The build writes to `dist/`:
+- `RefPad/` – the app folder (`RefPad.exe` + `_internal/`)
+- `RefPad-<version>-windows-x64.zip` and `RefPad-<version>-windows-x64.zip.sha256` – the two files for a GitHub release
 
-### Android Mobile APK
+### Android
 ```bash
 cd android
-./gradlew assembleRelease
+gradlew assembleRelease   # APK for testing
+gradlew bundleRelease     # AAB for Google Play
 ```
-Output: `android/app/build/outputs/apk/release/ReferenceBoard-release.apk` (and `dist/ReferenceBoard.apk`)
 
 ---
+
+## Publishing a Windows update
+
+The in-app updater looks at this repository's **GitHub Releases**. It installs a release only if it contains both:
+- `RefPad-X.Y.Z-windows-x64.zip`
+- `RefPad-X.Y.Z-windows-x64.zip.sha256` (the updater refuses updates without a matching checksum)
+
+and `X.Y.Z` is newer than the installed version. Drafts and pre-releases are ignored.
+
+To ship a new version:
+1. Raise `__version__` in `refpad/__init__.py` (for example `1.2.0` → `1.2.1`).
+2. Run `py -3.12 tools/build_windows.py`.
+3. On GitHub: **Releases → Draft a new release**, tag `v1.2.1`, add notes (they are shown in the update dialog), and attach **both** files from `dist/`.
+4. Publish. Installed copies offer the update within a day, or straight away via *⋮ → Check for updates*.
+
+How an update installs: RefPad downloads the zip over HTTPS from GitHub only, checks its size and SHA-256 checksum, unpacks it next to the installed folder, then closes. A small script swaps the folders and restarts RefPad; if the swap fails, the old version is put back. The board and settings live in `%LOCALAPPDATA%\RefPad`, outside the program folder, so updates never touch them. RefPad only updates itself when its folder contains nothing but RefPad's own files.
+
+---
+
+## Project layout
+
+```text
+refpad/                 Windows app (Python + Qt / PySide6)
+  core/store.py           board, practice list, recent PDFs; autosave
+  core/images.py          picture loading, previews, memory-limited cache
+  core/pdf.py             PDF pages rendered on demand on a background thread (Qt PDF / PDFium)
+  core/importer.py        files, folders, drag and drop, clipboard
+  core/timer.py           practice countdown and chime
+  core/updater.py         GitHub update check, verified download, folder swap
+  ui/window.py            main window and the floating window
+  ui/board_view.py        the board
+  ui/practice_view.py     practice
+  ui/pdf_view.py          PDF reader
+  ui/widgets.py           adaptive toolbar, tabs, menus, status chip, empty states
+  ui/dialogs.py           About / privacy / update dialogs
+tools/                  build script, icon tools, installer scripts
+tests/                  automated tests (pytest)
+android/                Android app (Kotlin)
+docs/privacy-policy.html  privacy policy (Android and Windows)
+play-store/             Google Play listing guide and graphics
+```
+
+The Windows and Android apps share the same design and icons (`tools/gen_icons.py` copies the Android icons into the Windows app).
 
 ## License
 
-MIT License. Designed and built as a clean, open reference companion for digital artists.
+MIT License. RefPad for Windows uses Qt for Python (PySide6, LGPL-3.0), which includes Qt PDF (PDFium).

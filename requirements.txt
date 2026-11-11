@@ -1,4 +1,8 @@
-PySide6>=6.5.0
-PyMuPDF>=1.22.0
-Pillow>=9.0.0
-pyinstaller>=6.0.0
+PySide6>=6.8
+
+# Only for building RefPad.exe (tools/build_windows.py)
+pyinstaller>=6.10
+
+# Only for tools/make_win_icon.py and running the tests
+Pillow>=10
+pytest>=8
