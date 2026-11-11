@@ -9,6 +9,7 @@ Output in dist/:
     RefPad-Setup-<version>.exe            one file to double-click for a first install (upload it as well)
 """
 import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -17,7 +18,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DIST = ROOT / "dist"
+DIST = Path(os.environ.get("REFPAD_DIST") or ROOT / "dist")   # REFPAD_DIST: build elsewhere (e.g. while dist/RefPad is open)
 APP = DIST / "RefPad"
 
 

@@ -52,6 +52,42 @@ def test_save_and_open_board_file(app, tmp_path):
     assert loaded.items[0].image == loaded.items[3].image
 
 
+def _wait(app, cond, timeout=10):
+    import time
+    end = time.time() + timeout
+    while not cond() and time.time() < end:
+        app.processEvents()
+        time.sleep(0.01)
+    return cond()
+
+
+def test_opening_the_boards_own_file_brings_back_the_saved_version(app, tmp_path):
+    """The board was emptied (or changed) and you open its file again: you get the saved board back."""
+    from refpad.core.store import BoardItem, State
+    from refpad.ui.board_files import BoardFiles
+    names = [images.store_image(_picture(200 + i * 10, 150))[0] for i in range(2)]
+    path = tmp_path / "Chapter 1.refpad"
+    boards.write_board(str(path), [BoardItem(n, 200, 150, cx=i * 300.0).to_json() for i, n in enumerate(names)], None)
+    st = State()
+    st.items.clear()
+    files = BoardFiles(None, st)
+    files.open(str(path))
+    assert _wait(app, lambda: len(st.items) == 2) and st.board_path == str(path)
+    st.clear_board()
+    assert st.items == [] and st.board_dirty
+    files.open(str(path))                       # used to do nothing here
+    assert _wait(app, lambda: len(st.items) == 2) and not st.board_dirty
+    st.items[0].flip = True
+    st.edited()
+    files._confirm_revert = lambda name: False  # "Cancel": keep the change
+    files.open(str(path))
+    app.processEvents()
+    assert st.items[0].flip and st.board_dirty
+    files._confirm_revert = lambda name: True   # "Open saved version"
+    files.open(str(path))
+    assert _wait(app, lambda: not st.board_dirty) and not st.items[0].flip
+
+
 def test_saving_over_an_old_format_file_keeps_a_backup(app, tmp_path):
     path = tmp_path / "old.refpad"
     path.write_text('{"version": "1.0", "items": []}', encoding="utf-8")

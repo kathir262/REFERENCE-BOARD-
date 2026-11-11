@@ -145,14 +145,30 @@ class BoardFiles:
     def open(self, path: str):
         st = self.state
         if st.board_path and os.path.normcase(os.path.abspath(st.board_path)) == os.path.normcase(os.path.abspath(path)):
-            st.set_mode(BOARD)
-            return
+            # The file of the board that is showing: bring back the saved version from disk.
+            if st.items and not st.board_dirty:
+                st.set_mode(BOARD)
+                st.notify(f"“{Path(path).stem}” is already open")
+                return
+            if st.items and not self._confirm_revert(Path(path).stem):
+                return
+            return self._load(path)
+        self._before_switch(lambda: self._load(path))
 
-        def go():
-            st.busy(f"Opening “{Path(path).stem}”…")
-            images.run_async(lambda: boards.read_board(path), lambda res: self._opened(path, res))
+    def _confirm_revert(self, name: str) -> bool:
+        box = QMessageBox(self.win)
+        box.setWindowTitle("Open the saved board?")
+        box.setText(f"Go back to the saved version of “{name}”?")
+        box.setInformativeText("The changes you made since you last saved it will be lost.")
+        ok = box.addButton("Open saved version", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(ok)
+        box.exec()
+        return box.clickedButton() is ok
 
-        self._before_switch(go)
+    def _load(self, path: str):
+        self.state.busy(f"Opening “{Path(path).stem}”…")
+        images.run_async(lambda: boards.read_board(path), lambda res: self._opened(path, res))
 
     def _opened(self, path: str, res):
         st = self.state
