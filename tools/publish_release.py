@@ -110,7 +110,7 @@ def main():
     names = sorted(a["name"] for a in final.get("assets", []))
     print(f"Done: {final['html_url']}")
     print("Files:", ", ".join(names))
-    print("Installed copies offer this update within a day, or at once with ⋮ → Check for updates.")
+    print("Installed copies offer this update within a day, or at once with Check for updates.")
 
 
 if __name__ == "__main__":
