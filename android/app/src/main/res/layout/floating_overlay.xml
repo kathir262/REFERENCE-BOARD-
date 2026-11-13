@@ -204,13 +204,19 @@
                 <ImageButton android:id="@+id/btn_add_image" style="@style/ToolCompact.Accent" android:contentDescription="@string/image" android:src="@drawable/ic_image" />
                 <ImageButton android:id="@+id/btn_add_pdf" style="@style/ToolCompact.Accent" android:contentDescription="@string/pdf" android:src="@drawable/ic_pdf" />
                 <View style="@style/ToolDivider" android:layout_height="22dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" />
+                <ImageButton android:id="@+id/btn_b_undo" style="@style/ToolCompact" android:contentDescription="@string/undo_tool" android:src="@drawable/ic_undo" />
+                <ImageButton android:id="@+id/btn_b_redo" style="@style/ToolCompact" android:contentDescription="@string/redo" android:src="@drawable/ic_redo" />
+                <View style="@style/ToolDivider" android:layout_height="22dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" />
                 <ImageButton android:id="@+id/btn_flip" style="@style/ToolCompact" android:contentDescription="@string/flip" android:src="@drawable/ic_flip" />
                 <ImageButton android:id="@+id/btn_bw" style="@style/ToolCompact" android:contentDescription="@string/bw" android:src="@drawable/ic_bw" />
                 <ImageButton android:id="@+id/btn_rotate" style="@style/ToolCompact" android:contentDescription="@string/rotate" android:src="@drawable/ic_rotate" />
+                <ImageButton android:id="@+id/btn_crop" style="@style/ToolCompact" android:contentDescription="@string/crop" android:src="@drawable/ic_crop" />
                 <ImageButton android:id="@+id/btn_copy" style="@style/ToolCompact" android:contentDescription="@string/copy" android:src="@drawable/ic_copy" />
                 <ImageButton android:id="@+id/btn_paste" style="@style/ToolCompact" android:contentDescription="@string/paste" android:src="@drawable/ic_paste" />
                 <ImageButton android:id="@+id/btn_delete" style="@style/ToolCompact.Danger" android:contentDescription="@string/delete" android:src="@drawable/ic_delete" />
                 <View style="@style/ToolDivider" android:layout_height="22dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" />
+                <ImageButton android:id="@+id/btn_note" style="@style/ToolCompact" android:contentDescription="@string/note" android:src="@drawable/ic_note" />
+                <ImageButton android:id="@+id/btn_picker" style="@style/ToolCompact" android:contentDescription="@string/colour" android:src="@drawable/ic_picker" />
                 <ImageButton android:id="@+id/btn_arrange" style="@style/ToolCompact" android:contentDescription="@string/arrange" android:src="@drawable/ic_arrange" />
                 <ImageButton android:id="@+id/btn_fit" style="@style/ToolCompact" android:contentDescription="@string/fit" android:src="@drawable/ic_fit" />
                 <ImageButton android:id="@+id/btn_board_more" style="@style/ToolCompact" android:contentDescription="@string/more" android:src="@drawable/ic_more" android:visibility="gone" />
@@ -299,6 +305,8 @@
                 <View style="@style/ToolDivider" android:layout_height="22dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" />
                 <ImageButton android:id="@+id/btn_p_flip" style="@style/ToolCompact" android:contentDescription="@string/flip" android:src="@drawable/ic_flip" />
                 <ImageButton android:id="@+id/btn_p_bw" style="@style/ToolCompact" android:contentDescription="@string/bw" android:src="@drawable/ic_bw" />
+                <ImageButton android:id="@+id/btn_class" style="@style/ToolCompact" android:contentDescription="@string/class_" android:src="@drawable/ic_class" />
+                <ImageButton android:id="@+id/btn_memory" style="@style/ToolCompact" android:contentDescription="@string/memory" android:src="@drawable/ic_memory" />
                 <ImageButton android:id="@+id/btn_p_add" style="@style/ToolCompact.Accent" android:contentDescription="@string/add" android:src="@drawable/ic_add" />
                 <ImageButton android:id="@+id/btn_practice_more" style="@style/ToolCompact" android:contentDescription="@string/more" android:src="@drawable/ic_more" android:visibility="gone" />
             </LinearLayout>
@@ -340,9 +348,54 @@
                 <ImageButton android:id="@+id/btn_pdf_next" style="@style/ToolCompact" android:contentDescription="@string/next" android:src="@drawable/ic_page_down" />
                 <View style="@style/ToolDivider" android:layout_height="22dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" />
                 <ImageButton android:id="@+id/btn_pdf_fit" style="@style/ToolCompact" android:contentDescription="@string/fit" android:src="@drawable/ic_fit" />
+                <ImageButton android:id="@+id/btn_pdf_spread" style="@style/ToolCompact" android:contentDescription="@string/two_pages" android:src="@drawable/ic_spread" />
+                <ImageButton android:id="@+id/btn_pdf_pages" style="@style/ToolCompact" android:contentDescription="@string/pages" android:src="@drawable/ic_pages" />
+                <ImageButton android:id="@+id/btn_pdf_search" style="@style/ToolCompact" android:contentDescription="@string/search" android:src="@drawable/ic_search" />
+                <ImageButton android:id="@+id/btn_pdf_snip" style="@style/ToolCompact" android:contentDescription="@string/snip" android:src="@drawable/ic_snip" />
+                <ImageButton android:id="@+id/btn_pdf_bookmark" style="@style/ToolCompact" android:contentDescription="@string/bookmark" android:src="@drawable/ic_bookmark" />
                 <ImageButton android:id="@+id/btn_pdf_to_board" style="@style/ToolCompact" android:contentDescription="@string/to_board" android:src="@drawable/ic_image" />
                 <ImageButton android:id="@+id/btn_pdf_practice" style="@style/ToolCompact" android:contentDescription="@string/practise" android:src="@drawable/ic_timer" />
                 <ImageButton android:id="@+id/btn_pdf_more" style="@style/ToolCompact" android:contentDescription="@string/more" android:src="@drawable/ic_more" android:visibility="gone" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <!-- Choosing PDF pages for the board -->
+        <HorizontalScrollView
+            android:id="@+id/pdf_choose_tools"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:overScrollMode="never"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="4dp"
+                android:paddingEnd="30dp">
+
+                <ImageButton android:id="@+id/btn_choose_cancel" style="@style/ToolCompact" android:contentDescription="@string/cancel" android:src="@drawable/ic_close" />
+                <View style="@style/ToolDivider" android:layout_height="22dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" />
+                <ImageButton android:id="@+id/btn_choose_all" style="@style/ToolCompact" android:contentDescription="@string/all" android:src="@drawable/ic_arrange" />
+                <ImageButton android:id="@+id/btn_choose_none" style="@style/ToolCompact" android:contentDescription="@string/none" android:src="@drawable/ic_reset" />
+                <ImageButton android:id="@+id/btn_choose_pages" style="@style/ToolCompact" android:contentDescription="@string/pages" android:src="@drawable/ic_pdf" />
+
+                <TextView
+                    android:id="@+id/tv_choose_count"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:fontFamily="sans-serif-medium"
+                    android:fontFeatureSettings="tnum"
+                    android:gravity="center"
+                    android:minWidth="52dp"
+                    android:text="-"
+                    android:textColor="@color/text_primary"
+                    android:textSize="12sp" />
+
+                <ImageButton android:id="@+id/btn_choose_add" style="@style/ToolCompact.Accent" android:contentDescription="@string/add_pages" android:src="@drawable/ic_add" />
+                <ImageButton android:id="@+id/btn_choose_more" style="@style/ToolCompact" android:contentDescription="@string/more" android:src="@drawable/ic_more" android:visibility="gone" />
             </LinearLayout>
         </HorizontalScrollView>
     </LinearLayout>

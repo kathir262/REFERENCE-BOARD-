@@ -40,7 +40,16 @@ sealed class Pose {
  * A PDF opened in the PDF viewer. Only page shapes are kept in memory;
  * pages are drawn on demand. [position] is the page at the top of the screen (page index + fraction).
  */
-class ViewerDoc(val docId: String, val title: String, private val aspects: FloatArray, var position: Float = 0f) {
+class ViewerDoc(
+    val docId: String,
+    val title: String,
+    private val aspects: FloatArray,
+    var position: Float = 0f,
+    /** Two pages side by side, like an open book. */
+    var spread: Boolean = false,
+    /** Bookmarked pages (0-based). */
+    val bookmarks: java.util.TreeSet<Int> = java.util.TreeSet()
+) {
     val pageCount: Int get() = aspects.size
 
     /** Height divided by width for page [i]. */

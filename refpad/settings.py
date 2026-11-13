@@ -15,6 +15,9 @@ DEFAULTS = {
     "last_update_check": 0.0,
     "skip_version": "",
     "recent_boards": [],       # board files, most recent first
+    "board_bg": "dark",        # board and practice background: dark, grey or light
+    "class_plan": "",          # last practice class, e.g. "10x30s, 5x1m"
+    "memory_mode": False,      # practice: draw each pose from memory after it hides
 }
 
 

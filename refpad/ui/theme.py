@@ -21,6 +21,15 @@ DANGER = "#F87171"
 
 FONT_FAMILY = "Segoe UI Variable Text"
 
+# Board / practice backgrounds: dark (default), neutral grey (judging colours), light.
+BACKGROUNDS = {"dark": ("#0E0E10", "#2A2A31"), "grey": ("#76767A", "#6A6A6E"), "light": ("#E8E8EB", "#D2D2D8")}
+
+
+def board_colors():
+    from refpad.settings import settings
+    bg, dot = BACKGROUNDS.get(settings["board_bg"], BACKGROUNDS["dark"])
+    return QColor(bg), QColor(dot)
+
 
 def color(hex_: str, alpha: float = 1.0) -> QColor:
     c = QColor(hex_)

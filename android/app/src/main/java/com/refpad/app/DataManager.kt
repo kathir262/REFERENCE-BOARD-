@@ -5,6 +5,7 @@ import android.graphics.PointF
 import android.graphics.RectF
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import kotlin.math.max
 import kotlin.math.sqrt
 
@@ -28,6 +29,9 @@ object DataManager {
         fun onStatusChanged() {}
         fun onFitRequested() {}
         fun onDocsChanged() {}
+        fun onBoardFileChanged() {}
+        /** A PDF was added for the board: let the user choose its pages in the reader. */
+        fun onChoosePages(doc: ViewerDoc) {}
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -50,21 +54,64 @@ object DataManager {
     var mode = MODE_BOARD
         private set
 
-    /** Internal copy/paste clipboard (holds a reference, not a copy of the pixels). */
-    var clipboard: RefImage? = null
+    /** Internal copy/paste clipboard: a copy of the item (it shares the picture, not a copy of the pixels). */
+    var clipboard: RefBoardItem? = null
+
+    // ---------------------------------------------------------------- Board background
+    const val BG_DARK = 0
+    const val BG_GREY = 1
+    const val BG_LIGHT = 2
+    /** Board (and practice) background: dark, neutral grey or light. */
+    var background = BG_DARK
+        private set
+
+    fun setBackground(bg: Int) {
+        if (bg == background) return
+        background = bg
+        appContext?.getSharedPreferences("refpad", Context.MODE_PRIVATE)?.edit()?.putInt("board_bg", bg)?.apply()
+        each { it.onBoardChanged() }
+        each { it.onPracticeChanged() }
+    }
 
     /** Short progress text such as "Importing image 3 of 10", or null when idle. */
     var status: String? = null
+        private set
+    /** Stops the job the status describes (shown as a STOP button), or null. */
+    var statusStop: (() -> Unit)? = null
         private set
 
     /** False until the saved board has been read back from disk. */
     var restored = false
         private set
 
+    // ---------------------------------------------------------------- Board file
+    /** The .refpad file this board belongs to (a content:// address), or null for an untitled board. */
+    var boardUri: String? = null
+        private set
+    var boardName: String = ""
+        private set
+    /** Changed since it was last saved to its file. */
+    var boardDirty = false
+        private set
+    /** Goes up with every change, so a save that started before a change doesn't count as saving it. */
+    var boardVersion = 0
+        private set
+    val boardTitle: String get() = boardName.ifEmpty { "Untitled board" }
+    /** Goes up whenever a different board is shown, so imports into the old one stop. */
+    var boardEpoch = 0
+        private set
+    private var appContext: Context? = null
+    private val autoSave = Runnable { appContext?.let { BoardFiles.saveCurrent(it, quiet = true) } }
+
     fun init(context: Context) {
         if (initialized) return
         initialized = true
+        appContext = context.applicationContext
+        background = context.getSharedPreferences("refpad", Context.MODE_PRIVATE).getInt("board_bg", BG_DARK)
+            .coerceIn(BG_DARK, BG_LIGHT)
         Storage.init(context.applicationContext)
+        PracticeTimer.init(context.applicationContext)
+        PracticeHistory.init(context.applicationContext)
         Storage.loadAsync { state ->
             if (state != null) {
                 val hadPractice = practice.isNotEmpty()
@@ -73,17 +120,22 @@ object DataManager {
                 practiceIndex = if (hadPractice) practiceIndex + state.practice.size
                 else state.practiceIndex.coerceIn(0, max(0, practice.size - 1))
                 for (d in state.docs) if (docs.none { it.docId == d.docId }) docs.add(d)
+                boardUri = state.boardUri
+                boardName = state.boardName
+                boardDirty = state.boardDirty
                 // Reopen the mode you were in, if it still has something to show.
                 if (mode == MODE_BOARD && state.mode != MODE_BOARD &&
                     (state.mode != MODE_PDF || docs.isNotEmpty()) && (state.mode != MODE_PRACTICE || practice.isNotEmpty())
                 ) mode = state.mode
             }
             restored = true
+            forgetHistory()
             each { it.onBoardChanged() }
             each { it.onPracticeChanged() }
             each { it.onDocsChanged() }
             each { it.onModeChanged() }
             each { it.onStatusChanged() }
+            each { it.onBoardFileChanged() }
             requestFit()
             // Anything imported while we were still loading needs saving now.
             if (state == null || items.size != state.items.size || practice.size != state.practice.size) scheduleSave()
@@ -104,8 +156,11 @@ object DataManager {
 
     // ---------------------------------------------------------------- Board
 
-    fun addToBoard(image: RefImage, centerX: Float? = null, centerY: Float? = null): RefBoardItem {
-        val item = RefBoardItem(image)
+    fun addToBoard(image: RefImage, centerX: Float? = null, centerY: Float? = null): RefBoardItem =
+        addItem(RefBoardItem(image), centerX, centerY)
+
+    /** Adds a picture or note: with its middle at (centerX, centerY), or in the first free spot. */
+    fun addItem(item: RefBoardItem, centerX: Float? = null, centerY: Float? = null): RefBoardItem {
         if (centerX != null && centerY != null) {
             item.x = centerX - item.width / 2f
             item.y = centerY - item.height / 2f
@@ -113,7 +168,8 @@ object DataManager {
             placeAfterLast(item)
         }
         items.add(item)
-        boardChanged()
+        // Pictures arriving one after another from the same import are one undo step.
+        boardChanged(merge = "add")
         return item
     }
 
@@ -159,22 +215,139 @@ object DataManager {
         boardChanged()
     }
 
-    /** Draw this item on top of the others. */
+    /** Draw this item on top of the others (touching a picture does this; it is not an undo step of its own). */
     fun bringToFront(item: RefBoardItem) {
         if (items.lastOrNull() === item) return
         if (items.remove(item)) {
             items.add(item)
-            boardChanged()
+            shot = take()
+            each { it.onBoardChanged() }
+            markDirty()
+            scheduleSave()
         }
     }
 
     /** Call while an item is being dragged/resized: redraws everywhere without writing to disk. */
     fun itemsMoved() = each { it.onBoardChanged() }
 
-    /** Call after any finished change to the board: redraws and saves. */
-    fun boardChanged() {
+    /**
+     * Call after any finished change to the board: it becomes an undo step, then redraws and saves.
+     * Changes with the same [merge] key less than 2 seconds apart are one undo step.
+     */
+    fun boardChanged(merge: String? = null) {
+        record(merge)
         each { it.onBoardChanged() }
+        markDirty()
         scheduleSave()
+    }
+
+    // ---------------------------------------------------------------- Undo / redo
+
+    private const val MAX_UNDO = 40
+    private val undoStack = ArrayList<List<RefBoardItem>>()
+    private val redoStack = ArrayList<List<RefBoardItem>>()
+    /** The board as it was after the last change (what undo goes back to). */
+    private var shot: List<RefBoardItem> = emptyList()
+    private var lastMerge: String? = null
+    private var lastMergeAt = 0L
+
+    val canUndo: Boolean get() = undoStack.isNotEmpty()
+    val canRedo: Boolean get() = redoStack.isNotEmpty()
+
+    private fun take(): List<RefBoardItem> = items.map { it.snapshot() }
+
+    private fun record(merge: String?) {
+        val now = SystemClock.uptimeMillis()
+        val same = merge != null && merge == lastMerge && now - lastMergeAt < 2000
+        if (!same) {
+            undoStack.add(shot)
+            if (undoStack.size > MAX_UNDO) undoStack.removeAt(0)
+        }
+        lastMerge = merge
+        lastMergeAt = now
+        redoStack.clear()
+        shot = take()
+    }
+
+    private fun forgetHistory() {
+        undoStack.clear()
+        redoStack.clear()
+        lastMerge = null
+        shot = take()
+    }
+
+    fun undo(): Boolean {
+        if (undoStack.isEmpty()) return false
+        redoStack.add(take())
+        restore(undoStack.removeAt(undoStack.size - 1))
+        return true
+    }
+
+    fun redo(): Boolean {
+        if (redoStack.isEmpty()) return false
+        undoStack.add(take())
+        restore(redoStack.removeAt(redoStack.size - 1))
+        return true
+    }
+
+    private fun restore(snap: List<RefBoardItem>) {
+        items.clear()
+        items.addAll(snap.map { it.snapshot() })
+        shot = take()
+        lastMerge = null
+        each { it.onBoardChanged() }
+        markDirty()
+        scheduleSave()
+    }
+
+    private fun markDirty() {
+        boardVersion++
+        if (!boardDirty) {
+            boardDirty = true
+            each { it.onBoardFileChanged() }
+        }
+        // A board with a file saves itself a few seconds after the last change
+        // (Android may close the app in the background at any time).
+        if (boardUri != null) {
+            main.removeCallbacks(autoSave)
+            main.postDelayed(autoSave, 4000)
+        }
+    }
+
+    /**
+     * The board was written to [uri]; it counts as saved unless it changed while being written.
+     * With [adopt] ("Save as") the board now belongs to that file.
+     */
+    fun boardSaved(uri: String, name: String, version: Int, adopt: Boolean) {
+        if (!adopt && boardUri != uri) return
+        boardUri = uri
+        boardName = name
+        boardDirty = version != boardVersion
+        each { it.onBoardFileChanged() }
+        scheduleSave()
+    }
+
+    /** Shows another board: one opened from a file, or a new empty one ([dirty]: not saved anywhere yet). */
+    fun replaceBoard(newItems: List<RefBoardItem>, uri: String?, name: String, dirty: Boolean = false) {
+        main.removeCallbacks(autoSave)
+        boardEpoch++
+        items.clear()
+        items.addAll(newItems)
+        forgetHistory()
+        boardUri = uri
+        boardName = name
+        boardDirty = dirty
+        boardVersion++
+        each { it.onBoardChanged() }
+        each { it.onBoardFileChanged() }
+        requestFit()
+        scheduleSave()
+    }
+
+    /** Opens [doc] in the reader so its pages can be chosen for the board. */
+    fun choosePages(doc: ViewerDoc) {
+        openDoc(doc)
+        each { it.onChoosePages(doc) }
     }
 
     /** Lays every image out in tidy rows. */
@@ -233,9 +406,10 @@ object DataManager {
 
     /** Replaces the practice session with the images that are on the board. */
     fun practiceWithBoardImages(): Boolean {
-        if (items.isEmpty()) return false
+        val pictures = items.mapNotNull { it.image }
+        if (pictures.isEmpty()) return false
         practice.clear()
-        items.mapTo(practice) { Pose.Image(it.image) }
+        pictures.mapTo(practice) { Pose.Image(it) }
         setIndex(0)
         return true
     }
@@ -243,10 +417,22 @@ object DataManager {
     fun clearPractice() {
         practice.clear()
         practiceIndex = 0
-        PracticeTimer.pause()
+        PracticeTimer.listChanged()
         each { it.onPracticeChanged() }
         scheduleSave()
     }
+
+    /** Memory mode hid or showed the pose. */
+    fun poseCoverChanged() = each { it.onPracticeChanged() }
+
+    /** A short message at the bottom of the screen (works from the floating window too). */
+    fun toast(text: String) {
+        val ctx = appContext ?: return
+        android.widget.Toast.makeText(ctx, text, if (text.length > 60) android.widget.Toast.LENGTH_LONG else android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    /** The picture the floating window should zoom to when it opens ("Float this picture"), or 0. */
+    var floatFocusId = 0L
 
     fun nextPose() {
         if (practice.isNotEmpty()) setIndex((practiceIndex + 1) % practice.size)
@@ -325,9 +511,10 @@ object DataManager {
         scheduleSave()
     }
 
-    fun setStatus(text: String?) {
-        if (status == text) return
+    fun setStatus(text: String?, stop: (() -> Unit)? = null) {
+        if (status == text && statusStop === stop) return
         status = text
+        statusStop = if (text == null) null else stop
         each { it.onStatusChanged() }
     }
 
@@ -344,6 +531,6 @@ object DataManager {
     fun saveNow() {
         main.removeCallbacks(saveRunnable)
         if (!restored) return // never overwrite the saved board before it has been read back
-        Storage.saveAsync(Storage.encode(items, practice, practiceIndex, docs, mode))
+        Storage.saveAsync(Storage.encode(items, practice, practiceIndex, docs, mode, boardUri, boardName, boardDirty))
     }
 }

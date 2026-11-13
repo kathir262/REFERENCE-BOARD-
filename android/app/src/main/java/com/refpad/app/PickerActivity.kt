@@ -16,6 +16,10 @@ class PickerActivity : Activity() {
         const val EXTRA_TARGET = "target"
         const val PICK_IMAGES = "images"
         const val PICK_PDF = "pdf"
+        const val OPEN_BOARD = "open_board"
+        const val CREATE_BOARD = "create_board"
+        const val EXPORT_PNG = "export_png"
+        const val EXTRA_NAME = "name"
         private const val REQ_PICK = 7
     }
 
@@ -33,6 +37,9 @@ class PickerActivity : Activity() {
         val (primary, fallback) = when (intent.getStringExtra(EXTRA_ACTION)) {
             PICK_IMAGES -> Pickers.images() to Pickers.imagesFallback()
             PICK_PDF -> Pickers.pdf() to Pickers.pdfFallback()
+            OPEN_BOARD -> Pickers.openBoard() to null
+            CREATE_BOARD -> Pickers.createBoard(intent.getStringExtra(EXTRA_NAME) ?: "Board") to null
+            EXPORT_PNG -> Pickers.createPng(intent.getStringExtra(EXTRA_NAME) ?: "Board") to null
             else -> {
                 finish()
                 return
@@ -50,6 +57,24 @@ class PickerActivity : Activity() {
     @Deprecated("Plain Activity result API; this app uses no AndroidX libraries")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        when (intent.getStringExtra(EXTRA_ACTION)) {
+            OPEN_BOARD -> {
+                if (resultCode == RESULT_OK) data?.data?.let { FloatingOverlayService.openBoard(this, it) }
+                finish()
+                return
+            }
+            CREATE_BOARD -> {
+                val uri = if (resultCode == RESULT_OK) data?.data else null
+                if (uri != null) BoardFiles.created(this, uri) else BoardFiles.afterSaveAs = null
+                finish()
+                return
+            }
+            EXPORT_PNG -> {
+                if (resultCode == RESULT_OK) data?.data?.let { BoardExport.export(this, it) }
+                finish()
+                return
+            }
+        }
         val uris = if (resultCode == RESULT_OK) Importer.urisFrom(data) else emptyList()
         if (uris.isEmpty()) {
             finish()

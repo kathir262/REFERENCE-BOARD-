@@ -33,6 +33,26 @@ def is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
+_store_app = None
+
+
+def is_store_app() -> bool:
+    """True when RefPad runs as the Microsoft Store (MSIX) package. Store copies are updated by the Store."""
+    global _store_app
+    if _store_app is None:
+        _store_app = False
+        if os.name == "nt" and is_frozen():
+            try:
+                import ctypes
+                length = ctypes.c_uint32(0)
+                # 15700 = APPMODEL_ERROR_NO_PACKAGE: a normal (unpackaged) program.
+                rc = ctypes.windll.kernel32.GetCurrentPackageFullName(ctypes.byref(length), None)
+                _store_app = rc != 15700
+            except (AttributeError, OSError):
+                _store_app = False
+    return _store_app
+
+
 def install_dir() -> Path:
     """Folder that holds RefPad.exe (only meaningful when frozen)."""
     return Path(sys.executable).resolve().parent

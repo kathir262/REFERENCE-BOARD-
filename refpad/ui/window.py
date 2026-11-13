@@ -11,7 +11,7 @@ import os
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPoint, QRect, Qt, QTimer
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, Qt, QTimer
 from PySide6.QtGui import QAction, QIcon, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QHBoxLayout, QLabel, QPushButton, QSizeGrip,
                                QStackedWidget, QToolButton,
@@ -28,6 +28,8 @@ from refpad.ui import theme
 from refpad.ui.board_files import BoardFiles
 from refpad.ui.board_view import BoardView
 from refpad.ui.pdf_pages import PdfPagesDialog
+from refpad.ui.pdf_panel import PdfPagesPanel, SearchBar
+from refpad.ui.pin_window import PinWindow
 from refpad.ui.dialogs import AboutDialog, UpdateDialog
 from refpad.ui.pdf_view import PdfView
 from refpad.ui.practice_view import PracticeView
@@ -116,10 +118,23 @@ class MainWindow(QWidget):
         self.a_back = A("Send to back", "arrange", lambda: self.state.send_to_back(self.board.selected), "PgDown")
         self.a_zoom_in = A("Zoom in", "zoom", lambda: self.zoom(1.25), ["Ctrl+=", "Ctrl++", "+"])
         self.a_zoom_out = A("Zoom out", "zoom", lambda: self.zoom(0.8), ["Ctrl+-", "-"])
+        self.a_undo = A("Undo", "undo", self.state.undo, "Ctrl+Z", "Undo")
+        self.a_redo = A("Redo", "redo", self.state.redo, ["Ctrl+Y", "Ctrl+Shift+Z"], "Redo")
+        self.a_crop = A("Crop", "crop", self.toggle_crop, "C", "Crop the selected image", checkable=True)
+        self.a_note = A("Note", "note", self.add_note, "N", "Add a note to the board")
+        self.a_picker = A("Colour", "picker", self.toggle_picker, "I", "Pick a colour from a picture", checkable=True)
+        self.a_lock = A("Lock", "lock", self.toggle_lock, "L", "Lock the selected images in place", checkable=True)
+        self.a_export = A("Export board as PNG…", "export", self.export_board, "Ctrl+E")
+        self._pins = []
         # Practice
         self.a_prev = A("Prev", "prev", self.state.prev_pose, ["Left", "A"], "Previous pose")
         self.a_play = A("Play", "play", self.timer.toggle, "Space", "Play or pause", accent=True)
-        self.a_next = A("Next", "next", self.state.next_pose, ["Right", "D"], "Next pose")
+        self.a_next = A("Next", "next", lambda: self.timer.advance(), ["Right", "D"], "Next pose")
+        self.a_class = A("Class", "class", self.show_class_menu, tip="Timed class: short poses first, then longer ones")
+        self.a_memory = A("Memory", "memory", self.toggle_memory, "M",
+                          "Memory mode: each pose hides after its time, then you draw it from memory", checkable=True)
+        self.a_memory.setChecked(self.timer.memory)
+        self.a_history = A("Practice history", "chart", self.show_history)
         self.a_p_flip = A("Flip", "flip", self.toggle_practice_flip, "H", "Flip horizontally", checkable=True)
         self.a_p_bw = A("B&W", "bw", self.toggle_practice_bw, "G", "Black & white", checkable=True)
         self.a_interval = A("1 min", "timer", self.show_interval_menu, tip="Time per pose")
@@ -132,6 +147,17 @@ class MainWindow(QWidget):
         self.a_page_next = A("Next", "page_down", lambda: self.pdf.next_page(), tip="Next page")
         self.a_to_board = A("To board", "image", lambda: self.page_to_board(self.pdf.current_page), tip="Add this page to the board")
         self.a_pdf_practise = A("Practise", "timer", lambda: self.practise_from(self.pdf.current_page), tip="Practise from this page")
+        self.a_spread = A("Two pages", "spread", lambda: self.pdf.set_spread(not self.pdf.spread),
+                          tip="Two pages side by side", checkable=True)
+        self.a_page_list = A("Pages", "pages", self.toggle_page_list, tip="Page list", checkable=True)
+        self.a_search = A("Search", "search", self.open_search, "Ctrl+F", "Find text in this PDF")
+        self.a_find_next = A("Next match", "page_down", lambda: self._hit(+1), "F3")
+        self.a_find_prev = A("Previous match", "page_up", lambda: self._hit(-1), "Shift+F3")
+        self.a_snip = A("Snip", "snip", lambda: self.pdf.set_snipping(not self.pdf.snipping), "S",
+                        "Snip: drag a box around part of a page to put it on the board", checkable=True)
+        self.a_bookmark = A("Bookmark", "bookmark", self.toggle_bookmark, "Ctrl+D", "Bookmark this page", checkable=True)
+        self._hits = []
+        self._search_token = 0
         # Window
         self.a_mode = [A(t, "image", lambda m=m: self.state.set_mode(m), k) for t, m, k in
                        (("Board", BOARD, "Ctrl+1"), ("Practice", PRACTICE, "Ctrl+2"), ("PDF", PDF, "Ctrl+3"))]
@@ -142,11 +168,15 @@ class MainWindow(QWidget):
         self.a_updates = A("Check for updates…", "reset", self.show_about)
         self.a_chime = A("Chime when the pose changes", "timer", self.toggle_chime, checkable=True)
         self.a_chime.setChecked(bool(settings["chime"]))
-        self.board_actions = [self.a_image, self.a_flip, self.a_bw, self.a_rotate, self.a_rotate_left, self.a_copy,
+        self.board_actions = [self.a_undo, self.a_redo, self.a_crop, self.a_note, self.a_picker, self.a_lock, self.a_export,
+                              self.a_image, self.a_flip, self.a_bw, self.a_rotate, self.a_rotate_left, self.a_copy,
                               self.a_delete, self.a_arrange, self.a_select_all, self.a_front, self.a_back]
-        self.practice_actions = [self.a_prev, self.a_play, self.a_next, self.a_p_flip, self.a_p_bw, self.a_interval,
+        self.practice_actions = [self.a_class, self.a_memory, self.a_history,
+                                 self.a_prev, self.a_play, self.a_next, self.a_p_flip, self.a_p_bw, self.a_interval,
                                  self.a_p_add, self.a_restart]
-        self.pdf_actions = [self.a_open, self.a_recent, self.a_page_prev, self.a_page_next, self.a_to_board, self.a_pdf_practise]
+        self.pdf_actions = [self.a_open, self.a_recent, self.a_page_prev, self.a_page_next, self.a_to_board, self.a_pdf_practise,
+                            self.a_spread, self.a_page_list, self.a_search, self.a_find_next, self.a_find_prev,
+                            self.a_snip, self.a_bookmark]
 
     # ================================================================== layout
 
@@ -219,6 +249,9 @@ class MainWindow(QWidget):
             self.stack.addWidget(v)
         self.empty = EmptyState(self.content)
         self.chip = StatusChip(self.content)
+        self.page_list = PdfPagesPanel(self.engine, self.content)
+        self.page_list.hide()
+        self.search_bar = SearchBar(self.content)
         self.page_label = QLabel("", objectName="PageLabel")
         self.page_label_c = QLabel("", objectName="PageLabel")
         self.hud_c = Hud(compact=True)
@@ -249,15 +282,21 @@ class MainWindow(QWidget):
             T(self.a_image, accent=True)
             T(self.a_pdf, accent=True)
             tb.add_separator()
-            T(self.a_flip, 6)
-            T(self.a_bw, 5)
-            T(self.a_rotate, 4)
-            T(self.a_copy, 1)
-            T(self.a_paste, 2)
-            T(self.a_delete, 7, danger=True)
+            T(self.a_undo, 11)
+            T(self.a_redo, 1)
             tb.add_separator()
+            T(self.a_flip, 10)
+            T(self.a_bw, 8)
+            T(self.a_rotate, 7)
+            T(self.a_crop, 9)
+            T(self.a_copy, 2)
+            T(self.a_paste, 3)
+            T(self.a_delete, 12, danger=True)
+            tb.add_separator()
+            T(self.a_note, 4)
+            T(self.a_picker, 5)
             T(self.a_arrange, 0)
-            T(self.a_fit, 3)
+            T(self.a_fit, 6)
         elif mode == PRACTICE:
             if compact:
                 tb.add(self.hud_c)
@@ -272,17 +311,24 @@ class MainWindow(QWidget):
             T(self.a_p_flip, 2)
             T(self.a_p_bw, 1)
             tb.add_separator()
-            T(self.a_interval, 3)
+            T(self.a_memory, 1)
+            T(self.a_class, 4)
+            T(self.a_interval, 5)
             T(self.a_p_add, 0, accent=True)
         else:
-            T(self.a_open, 4, accent=True)
-            T(self.a_recent, 2)
+            T(self.a_open, 9, accent=True)
+            T(self.a_recent, 5)
             tb.add_separator()
             T(self.a_page_prev)
             tb.add(self.page_label_c if compact else self.page_label)
             T(self.a_page_next)
             tb.add_separator()
-            T(self.a_fit, 3)
+            T(self.a_fit, 8)
+            T(self.a_spread, 2)
+            T(self.a_page_list, 4)
+            T(self.a_search, 6)
+            T(self.a_snip, 7)
+            T(self.a_bookmark, 3)
             T(self.a_to_board, 1)
             T(self.a_pdf_practise, 0)
         tb.finish()
@@ -307,7 +353,19 @@ class MainWindow(QWidget):
         self._pad_bottom = pad_bottom
         self.board.pad_bottom = pad_bottom
         self.practice.pad_bottom = pad_bottom
-        self.pdf.set_padding(0, pad_bottom)
+        show_list = self.state.mode == PDF and self.a_page_list.isChecked() and self.pdf.ready and w > 560
+        self.page_list.setVisible(show_list)
+        if show_list:
+            self.page_list.setGeometry(0, 0, PdfPagesPanel.WIDTH, h - pad_bottom - 6)
+            self.page_list.raise_()
+        self.pdf.set_padding(0, pad_bottom, PdfPagesPanel.WIDTH if show_list else 0)
+        if self.state.mode != PDF and not self.search_bar.isHidden():
+            self.search_bar.hide()
+        if not self.search_bar.isHidden():
+            self.search_bar.adjustSize()
+            sw = min(self.search_bar.sizeHint().width(), w - 24)
+            self.search_bar.setGeometry(w - sw - 18, 12, sw, self.search_bar.sizeHint().height())
+            self.search_bar.raise_()
         if not self.empty.isHidden():
             self.empty.place(w, h, 0, pad_bottom)
         self.chip.reposition()
@@ -434,11 +492,22 @@ class MainWindow(QWidget):
         st.docsChanged.connect(self._sync_pdf)
         st.status.connect(lambda text, busy, undo: self.chip.show_message(text, busy, undo))
         self.board.selectionChanged.connect(self._sync_board)
+        self.board.toolChanged.connect(self._sync_board)
         self.board.contextRequested.connect(self._board_context)
         self.practice.contextRequested.connect(lambda pos: self.show_practice_menu(at=pos.toPoint()))
         self.pdf.contextRequested.connect(lambda page, pos: self.show_pdf_menu(at=pos.toPoint(), page=page))
         self.pdf.pageChanged.connect(self._sync_pdf)
+        self.pdf.snipped.connect(lambda page, frac: self.state.doc and self.importer.region_to_board(self.state.doc.path, page, frac))
+        self.pdf.snipModeChanged.connect(lambda on: (self.a_snip.setChecked(on),
+                                                     on and self.state.notify("Drag a box around part of a page · Esc to stop")))
+        self.page_list.pageClicked.connect(lambda i: self.pdf.go_to_page(i))
+        self.search_bar.searched.connect(self._search)
+        self.search_bar.nextHit.connect(lambda: self._hit(+1))
+        self.search_bar.prevHit.connect(lambda: self._hit(-1))
+        self.search_bar.closed.connect(self.close_search)
         self.timer.tick.connect(self._sync_hud)
+        self.timer.classChanged.connect(self._sync_practice)
+        self.timer.phaseChanged.connect(self._sync_hud)
         self.timer.runningChanged.connect(lambda _r: self._sync_practice())
 
     def eventFilter(self, obj, e):
@@ -488,10 +557,20 @@ class MainWindow(QWidget):
             self._sync_empty()
             return
         sel = self.board.selected
-        for a in (self.a_flip, self.a_bw, self.a_rotate, self.a_rotate_left, self.a_copy, self.a_delete, self.a_front, self.a_back):
+        pics = [i for i in sel if not i.is_note]
+        for a in (self.a_copy, self.a_delete, self.a_front, self.a_back, self.a_lock):
             a.setEnabled(bool(sel))
-        self.a_flip.setChecked(bool(sel) and sel[-1].flip)
-        self.a_bw.setChecked(bool(sel) and sel[-1].gray)
+        for a in (self.a_flip, self.a_bw, self.a_rotate, self.a_rotate_left):
+            a.setEnabled(bool(pics))
+        self.a_flip.setChecked(bool(pics) and pics[-1].flip)
+        self.a_bw.setChecked(bool(pics) and pics[-1].gray)
+        self.a_crop.setEnabled(self.board.cropping or (len(pics) == 1 and len(sel) == 1 and not pics[0].locked))
+        self.a_crop.setChecked(self.board.cropping)
+        self.a_picker.setChecked(self.board.picking)
+        self.a_lock.setChecked(bool(sel) and sel[-1].locked)
+        self.a_undo.setEnabled(st.can_undo)
+        self.a_redo.setEnabled(st.can_redo)
+        self.a_export.setEnabled(bool(st.items))
         self.a_arrange.setEnabled(bool(st.items))
         self.a_select_all.setEnabled(bool(st.items))
         self._sync_empty()
@@ -514,17 +593,26 @@ class MainWindow(QWidget):
             self.a_play.setText("Pause" if running else "Play")
         self.a_p_flip.setChecked(st.practice_flip)
         self.a_p_bw.setChecked(st.practice_gray)
-        self.a_interval.setText(interval_label(st.interval))
+        self.a_interval.setText(interval_label(self.timer.total_ms // 1000) if self.timer.plan else interval_label(st.interval))
+        self.a_class.setText("Class ✓" if self.timer.plan else "Class")
+        self.a_memory.setChecked(self.timer.memory)
         self._sync_hud()
         self._sync_empty()
 
     def _sync_hud(self):
         st = self.state
         n = len(st.practice)
-        t = clock(self.timer.remaining_ms) if n else "–:––"
-        self.hud.set(t, f"Pose {st.practice_index + 1} of {n}" if n else "No poses")
-        self.hud_c.set(t, f"{st.practice_index + 1}/{n}" if n else "")
-        self.hud_t.set(t, f"{st.practice_index + 1}/{n}" if n else "")
+        tm = self.timer
+        t = clock(tm.remaining_ms) if n else "–:––"
+        if tm.hidden:
+            long_, short = "Draw from memory", "draw"
+        elif tm.plan:
+            long_, short = f"Class {tm.plan_pos + 1}/{len(tm.plan)}", f"{tm.plan_pos + 1}/{len(tm.plan)}"
+        else:
+            long_, short = (f"Pose {st.practice_index + 1} of {n}" if n else "No poses"), (f"{st.practice_index + 1}/{n}" if n else "")
+        self.hud.set(t, long_)
+        self.hud_c.set(t, short)
+        self.hud_t.set(t, short)
 
     def _sync_pdf(self):
         st = self.state
@@ -533,11 +621,19 @@ class MainWindow(QWidget):
         for lab in (self.page_label, self.page_label_c):
             if lab.text() != text:
                 lab.setText(text)
+        doc = st.doc
         if st.mode == PDF:
             ready = self.pdf.ready
-            for a in (self.a_page_prev, self.a_page_next, self.a_to_board, self.a_pdf_practise):
+            for a in (self.a_page_prev, self.a_page_next, self.a_to_board, self.a_pdf_practise, self.a_spread,
+                      self.a_page_list, self.a_search, self.a_snip, self.a_bookmark):
                 a.setEnabled(ready)
             self.a_recent.setEnabled(bool(st.docs))
+            self.a_spread.setChecked(self.pdf.spread)
+            self.a_bookmark.setChecked(bool(doc) and self.pdf.current_page in doc.bookmarks)
+            self.a_snip.setChecked(self.pdf.snipping)
+            if ready and not self.page_list.isHidden():
+                self.page_list.set_doc(doc.path, self.pdf.page_count, doc.bookmarks)
+                self.page_list.set_current(self.pdf.current_page)
         self._sync_empty()
 
     def _sync_empty(self):
@@ -738,6 +834,9 @@ class MainWindow(QWidget):
                 self.importer.qimages_to_practice([img])
             else:
                 self.importer.qimages_to_board([img])
+        elif md.hasUrls():   # a picture dragged from a web page
+            web = [u.toString() for u in md.urls() if u.scheme() in ("http", "https")]
+            self.importer.download_images(web, self.state.mode == PRACTICE)
         e.acceptProposedAction()
 
     # ================================================================== boards & PDF pages
@@ -780,6 +879,157 @@ class MainWindow(QWidget):
                 self.state.set_mode(BOARD)
                 self.importer.pdf_pages_to_board(path, dlg.pages)
         self.importer.with_info(path, go)
+
+    # ================================================================== board tools
+
+    def toggle_crop(self):
+        if self.board.cropping:
+            self.board.finish_crop()
+        elif not self.board.start_crop():
+            self.state.notify("Click one picture first, then Crop")
+        self._sync_board()
+
+    def toggle_picker(self):
+        self.board.set_picking(not self.board.picking)
+        if self.board.picking:
+            self.state.notify("Click a picture to copy its colour · Esc to stop")
+
+    def toggle_lock(self):
+        sel = self.board.selected
+        if sel:
+            value = not sel[-1].locked
+            self._edit_selected(lambda it: setattr(it, "locked", value))
+            self.state.notify(("Locked" if value else "Unlocked") + (" – drag moves the board" if value else ""))
+
+    def add_note(self):
+        from refpad.core.store import note_item
+        self.state.set_mode(BOARD)
+        b = self.board.to_board(QPointF(self.board.width() / 2, self.board.height() / 2))
+        note = note_item("", b.x(), b.y())
+        note.scale = max(0.4, min(3.0, 1 / max(0.05, self.board.zoom) * 0.6))
+        self.state.add_items([note], place=False)
+        self.board.set_selected([note])
+        self.board.edit_note(note, new=True)
+
+    def set_background(self, key: str):
+        settings["board_bg"] = key
+        self.board.update()
+        self.practice.update()
+
+    def pin_items(self, items):
+        from refpad.core.importer import item_image
+        for it in items[:6]:
+            img = item_image(it)
+            if img is None:
+                continue
+            w = PinWindow(img)
+            w.destroyed.connect(lambda _=None, w=w: self._pins.remove(w) if w in self._pins else None)
+            self._pins.append(w)
+            off = 30 * (len(self._pins) - 1)
+            g = self.geometry()
+            w.move(g.right() - w.width() - 60 - off, g.top() + 90 + off)
+            w.show()
+        self.state.notify("Pinned on top · drag to move, scroll to resize, right-click for options")
+
+    def export_board(self):
+        import dataclasses
+        from refpad.ui.board_export import render_board
+        st = self.state
+        items = self.board.selected or st.items
+        if not items:
+            return
+        folder = Path.home() / "Pictures"
+        path, _ = QFileDialog.getSaveFileName(self, "Export board as picture", str(folder / f"{st.board_name}.png"),
+                                              "PNG picture (*.png)")
+        if not path:
+            return
+        snap = [dataclasses.replace(i) for i in items]
+        bg = theme.board_colors()[0]
+        st.busy("Exporting the board…")
+
+        def work():
+            img = render_board(snap, bg)
+            if not img.save(path, "PNG"):
+                raise OSError("Couldn't write the picture")
+            return img.size()
+
+        def done(res):
+            if isinstance(res, Exception):
+                st.notify(f"Export failed: {res}")
+            else:
+                st.notify(f"Exported {Path(path).name} · {res.width()} × {res.height()} px")
+
+        images.run_async(work, done)
+
+    # ================================================================== PDF tools
+
+    def toggle_page_list(self):
+        on = not self.page_list.isVisible() if self.sender() is not self.a_page_list else self.a_page_list.isChecked()
+        self.a_page_list.setChecked(on)
+        doc = self.state.doc
+        if on and doc is not None and self.pdf.ready:
+            self.page_list.set_doc(doc.path, self.pdf.page_count, doc.bookmarks)
+            self.page_list.set_current(self.pdf.current_page)
+        self.layout_overlays()
+
+    def toggle_bookmark(self, page: int = None):
+        if self.state.doc is None:
+            return
+        on = self.pdf.toggle_bookmark(page)
+        p = (self.pdf.current_page if page is None else page) + 1
+        self.state.notify(f"Bookmarked page {p}" if on else f"Removed the bookmark on page {p}")
+        if not self.page_list.isHidden():
+            self.page_list.set_marks(self.state.doc.bookmarks)
+
+    def open_search(self):
+        if self.state.doc is None or not self.pdf.ready:
+            return
+        self.search_bar.open()
+        self.layout_overlays()
+
+    def close_search(self):
+        self._search_token += 1
+        self._hits = []
+        self.pdf.set_hits([])
+        self.search_bar.hide()
+        self.pdf.setFocus()
+
+    def _search(self, text: str):
+        from refpad.core import pdf as pdfmod
+        self._search_token += 1
+        token = self._search_token
+        self._hits = []
+        self.pdf.set_hits([])
+        doc = self.state.doc
+        if not text or doc is None:
+            self.search_bar.set_count("")
+            return
+        self.search_bar.set_count("Searching…")
+
+        def on_hits(batch):
+            if token != self._search_token:
+                return
+            first = not self._hits
+            self._hits.extend(batch)
+            self.pdf.set_hits(self._hits, self.pdf.hit_index)
+            if first:
+                self._hit(+1)
+            self.search_bar.set_count(f"{self.pdf.hit_index + 1} of {len(self._hits)}…")
+
+        def done(found):
+            if token != self._search_token:
+                return
+            n = len(self._hits)
+            self.search_bar.set_count(f"{self.pdf.hit_index + 1} of {n}" if n else "No matches")
+
+        pdfmod.search(doc.path, text, on_hits, lambda: token != self._search_token, done)
+
+    def _hit(self, step: int):
+        if not self._hits:
+            return
+        i = self.pdf.hit_index + step if self.pdf.hit_index >= 0 else 0
+        self.pdf.show_hit(i)
+        self.search_bar.set_count(f"{self.pdf.hit_index + 1} of {len(self._hits)}")
 
     # ================================================================== menus
 
@@ -843,8 +1093,17 @@ class MainWindow(QWidget):
             item(m, "Float on top of other apps", "float", self.toggle_float, shortcut="Ctrl+T")
             m.addAction(self.a_pin)
             item(m, "Exit full screen" if self.isFullScreen() else "Full screen", "open_full", self.toggle_fullscreen, shortcut="F11")
+        bgm = menu(m)
+        bgm.setTitle("Background")
+        bgm.setIcon(theme.icon("palette", theme.TEXT_2))
+        for key, label in (("dark", "Dark"), ("grey", "Neutral grey (for judging colours)"), ("light", "Light")):
+            a = item(bgm, label, "palette", lambda k=key: self.set_background(k))
+            a.setCheckable(True)
+            a.setChecked(settings["board_bg"] == key)
+        m.addMenu(bgm)
         m.addSeparator()
-        item(m, "Check for updates…", "reset", self.show_about)
+        if not paths.is_store_app():
+            item(m, "Check for updates…", "reset", self.show_about)
         item(m, "About RefPad and privacy", "info", self.show_about, shortcut="F1")
         self._popup(m, anchor_widget=anchor)
 
@@ -860,6 +1119,11 @@ class MainWindow(QWidget):
         item(m, "Arrange in rows", "arrange", self.arrange, enabled=has, shortcut="Ctrl+Shift+A")
         item(m, "Select all", "arrange", self.board.select_all, enabled=has, shortcut="Ctrl+A")
         item(m, "Practise with these images", "timer", lambda: self.importer.board_to_practice(st.items), enabled=has)
+        item(m, "Add a note", "note", self.add_note, shortcut="N")
+        item(m, "Pick a colour", "picker", self.toggle_picker, enabled=has, shortcut="I")
+        item(m, "Undo", "undo", st.undo, enabled=st.can_undo, shortcut="Ctrl+Z")
+        item(m, "Redo", "redo", st.redo, enabled=st.can_redo, shortcut="Ctrl+Y")
+        item(m, "Export board as PNG…", "export", self.export_board, enabled=has, shortcut="Ctrl+E")
         item(m, "Clear board", "delete", st.clear_board, enabled=has, danger=True)
 
     def _board_context(self, it, pos):
@@ -870,21 +1134,68 @@ class MainWindow(QWidget):
             m.exec(at)
             return
         sel = self.board.selected
-        header(m, "Image" if len(sel) <= 1 else f"{len(sel)} images")
-        item(m, "Copy", "copy", self.copy_selected, shortcut="Ctrl+C")
-        item(m, "Flip horizontally", "flip", self.flip_selected, shortcut="H")
-        item(m, "Rotate right", "rotate", lambda: self.rotate_selected(1), shortcut="R")
-        item(m, "Rotate left", "rotate_left", lambda: self.rotate_selected(-1), shortcut="Shift+R")
-        item(m, "Show in colour" if it.gray else "Black & white", "bw", self.bw_selected, shortcut="G")
-        item(m, "Zoom to this image", "zoom", lambda: self.board.fit_item(it))
+        pics = [i for i in sel if not i.is_note]
+        if it.is_note and len(sel) <= 1:
+            header(m, "Note")
+            item(m, "Edit note", "note", lambda: self.board.edit_note(it))
+            item(m, "Copy text", "copy", self.copy_selected, shortcut="Ctrl+C")
+        else:
+            header(m, "Image" if len(sel) <= 1 else f"{len(sel)} images")
+            item(m, "Copy", "copy", self.copy_selected, shortcut="Ctrl+C")
+            item(m, "Flip horizontally", "flip", self.flip_selected, shortcut="H")
+            item(m, "Rotate right", "rotate", lambda: self.rotate_selected(1), shortcut="R")
+            item(m, "Rotate left", "rotate_left", lambda: self.rotate_selected(-1), shortcut="Shift+R")
+            item(m, "Crop…", "crop", lambda: self.board.start_crop(it), enabled=len(sel) == 1 and not it.locked, shortcut="C")
+            if any(i.crop for i in pics):
+                item(m, "Show the whole picture", "fit", lambda: self.board.reset_crop(pics))
+        self._look_menus(m, sel, pics)
+        item(m, "Unlock" if it.locked else "Lock in place", "lock", self.toggle_lock, shortcut="L")
+        if not it.is_note:
+            item(m, "Zoom to this image", "zoom", lambda: self.board.fit_item(it))
+            item(m, "Pin on top of other apps", "pin", lambda: self.pin_items(pics))
         item(m, "Bring to front", "arrange", lambda: self.state.bring_to_front(list(sel)), shortcut="PgUp")
         item(m, "Send to back", "arrange", lambda: self.state.send_to_back(list(sel)), shortcut="PgDown")
-        item(m, "Practise with " + ("this image" if len(sel) <= 1 else "these images"), "timer",
-             lambda: self.importer.board_to_practice(list(sel)))
-        item(m, "Reset size and rotation", "reset", lambda: self._edit_selected(lambda i: i.reset()))
+        if pics:
+            item(m, "Practise with " + ("this image" if len(pics) <= 1 else "these images"), "timer",
+                 lambda: self.importer.board_to_practice(pics))
+            item(m, "Reset size and look", "reset", lambda: self._edit_selected(lambda i: i.reset()))
         m.addSeparator()
         item(m, "Delete", "delete", self.delete_selected, danger=True, shortcut="Del")
         m.exec(at)
+
+    def _look_menus(self, m, sel, pics):
+        """Opacity, black & white, value steps, squint and grid sub-menus."""
+        last = sel[-1]
+
+        def sub(title, icon_name):
+            s = menu(m)
+            s.setTitle(title)
+            s.setIcon(theme.icon(icon_name, theme.TEXT_2))
+            m.addMenu(s)
+            return s
+
+        def choice(s, label, icon_name, current, value, apply):
+            a = item(s, label, icon_name, lambda: self._edit_selected(apply))
+            a.setCheckable(True)
+            a.setChecked(current == value)
+
+        if pics:
+            p = pics[-1]
+            item(m, "Show in colour" if p.gray else "Black & white", "bw", self.bw_selected, shortcut="G")
+            vs = sub("Value steps", "values")
+            for n, label in ((0, "Off"), (2, "2 values"), (3, "3 values"), (4, "4 values"), (5, "5 values")):
+                choice(vs, label, "values", p.values, n, lambda i, n=n: setattr(i, "values", n) if not i.is_note else None)
+            a = item(m, "Squint (blur)", "squint", lambda: self._edit_selected(
+                lambda i, v=not p.blur: setattr(i, "blur", v) if not i.is_note else None))
+            a.setCheckable(True)
+            a.setChecked(p.blur)
+            gs = sub("Grid", "grid")
+            for n, label in ((0, "Off"), (2, "2 × 2"), (3, "3 × 3 (thirds)"), (4, "4 × 4"), (6, "6 × 6"), (8, "8 × 8")):
+                choice(gs, label, "grid", p.grid, n, lambda i, n=n: setattr(i, "grid", n) if not i.is_note else None)
+        os_ = sub("Opacity", "opacity")
+        for pct in (100, 75, 50, 25):
+            choice(os_, f"{pct}%", "opacity", round(last.opacity * 100), pct,
+                   lambda i, v=pct / 100: setattr(i, "opacity", v))
 
     def _fill_practice_menu(self, m):
         st = self.state
@@ -898,6 +1209,9 @@ class MainWindow(QWidget):
         item(m, "Restart this pose", "timer", self.timer.restart, enabled=has, shortcut="Home")
         item(m, "Reset zoom", "fit", self.practice.reset_zoom, enabled=has, shortcut="F")
         m.addAction(self.a_chime)
+        m.addAction(self.a_memory)
+        item(m, "Timed class…", "class", self.show_class_menu, enabled=has)
+        item(m, "Practice history", "chart", self.show_history)
         item(m, "Back to the board", "image", lambda: st.set_mode(BOARD))
         item(m, "Clear practice list", "delete", st.clear_practice, enabled=has, danger=True)
 
@@ -915,6 +1229,52 @@ class MainWindow(QWidget):
             a.setChecked(sec == self.state.interval)
         self._popup(m, self.a_interval)
 
+    def show_class_menu(self):
+        from refpad.core.timer import CLASSES, parse_plan, plan_text
+        tm = self.timer
+        m = menu(self)
+        header(m, "Timed class")
+        if not self.state.practice:
+            item(m, "Add poses first", "add", lambda: None, enabled=False)
+        for name, text in CLASSES:
+            plan = parse_plan(text)
+            item(m, f"{name}  ({len(plan)} poses)", "class", lambda p=plan, n=name: self._start_class(p, n),
+                 enabled=bool(self.state.practice))
+        item(m, "Custom class…", "class", self._custom_class, enabled=bool(self.state.practice))
+        if tm.plan:
+            m.addSeparator()
+            item(m, f"Stop the class ({plan_text(tm.plan[tm.plan_pos:])} left)", "close", tm.stop_class)
+        self._popup(m, self.a_class)
+
+    def _start_class(self, plan, name):
+        self.state.set_mode(PRACTICE)
+        self.timer.start_class(plan, name)
+        self.state.notify(f"{name} started · {len(plan)} poses")
+
+    def _custom_class(self):
+        from PySide6.QtWidgets import QInputDialog
+        from refpad.core.timer import parse_plan
+        text, ok = QInputDialog.getText(self, "Custom class", "Poses and times, for example  10x30s, 5x1m, 2x5m",
+                                        text=settings["class_plan"] or "10x30s, 5x1m, 2x5m")
+        if not ok:
+            return
+        plan = parse_plan(text)
+        if not plan:
+            return self.state.notify("Write it like 10x30s, 5x1m, 2x5m")
+        settings["class_plan"] = text
+        self._start_class(plan, "Custom class")
+
+    def toggle_memory(self):
+        on = not self.timer.memory
+        self.timer.set_memory(on)
+        self._sync_practice()
+        self.state.notify("Memory mode on: each pose hides after its time, then draw it from memory" if on
+                          else "Memory mode off")
+
+    def show_history(self):
+        from refpad.ui.dialogs import HistoryDialog
+        HistoryDialog(self).exec()
+
     def _fill_pdf_menu(self, m, page: int):
         st = self.state
         doc = st.doc
@@ -927,6 +1287,20 @@ class MainWindow(QWidget):
             item(m, self.pdf.fit_label(), "fit", self.pdf.toggle_fit, shortcut="F")
             item(m, "Go to first page", "page_up", lambda: self.pdf.go_to_page(0), shortcut="Home")
             item(m, "Go to last page", "page_down", lambda: self.pdf.go_to_page(self.pdf.page_count - 1), shortcut="End")
+            item(m, "Remove bookmark" if page in doc.bookmarks else f"Bookmark page {page + 1}", "bookmark",
+                 lambda: self.toggle_bookmark(page), shortcut="Ctrl+D")
+            item(m, "Snip part of a page onto the board", "snip", lambda: self.pdf.set_snipping(True), shortcut="S")
+            item(m, "Find text…", "search", self.open_search, shortcut="Ctrl+F")
+            a = item(m, "Two pages side by side", "spread", lambda: self.pdf.set_spread(not self.pdf.spread))
+            a.setCheckable(True)
+            a.setChecked(self.pdf.spread)
+            a = item(m, "Page list", "pages", self.toggle_page_list)
+            a.setCheckable(True)
+            a.setChecked(self.a_page_list.isChecked())
+            if doc.bookmarks:
+                header(m, "Bookmarks")
+                for b in doc.bookmarks[:12]:
+                    item(m, f"Page {b + 1}", "bookmark", lambda b=b: self.pdf.go_to_page(b))
         others = st.docs[1:7]
         if others:
             header(m, "Recent")
@@ -1152,6 +1526,8 @@ class MainWindow(QWidget):
         self.state.save_now()
 
     def _auto_check_updates(self):
+        if paths.is_store_app():   # the Microsoft Store keeps the Store copy up to date
+            return
         if not settings["auto_update"] or not updater.due_for_check(settings["last_update_check"]):
             return
 

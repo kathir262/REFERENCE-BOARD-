@@ -327,6 +327,20 @@
                 <View style="@style/ToolDivider" />
 
                 <TextView
+                    android:id="@+id/btn_b_undo"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_undo"
+                    android:text="@string/undo_tool" />
+
+                <TextView
+                    android:id="@+id/btn_b_redo"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_redo"
+                    android:text="@string/redo" />
+
+                <View style="@style/ToolDivider" />
+
+                <TextView
                     android:id="@+id/btn_flip"
                     style="@style/Tool"
                     android:drawableTop="@drawable/ic_flip"
@@ -343,6 +357,12 @@
                     style="@style/Tool"
                     android:drawableTop="@drawable/ic_rotate"
                     android:text="@string/rotate" />
+
+                <TextView
+                    android:id="@+id/btn_crop"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_crop"
+                    android:text="@string/crop" />
 
                 <TextView
                     android:id="@+id/btn_copy"
@@ -363,6 +383,18 @@
                     android:text="@string/delete" />
 
                 <View style="@style/ToolDivider" />
+
+                <TextView
+                    android:id="@+id/btn_note"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_note"
+                    android:text="@string/note" />
+
+                <TextView
+                    android:id="@+id/btn_picker"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_picker"
+                    android:text="@string/colour" />
 
                 <TextView
                     android:id="@+id/btn_arrange"
@@ -449,6 +481,18 @@
                 <View style="@style/ToolDivider" />
 
                 <TextView
+                    android:id="@+id/btn_class"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_class"
+                    android:text="@string/class_" />
+
+                <TextView
+                    android:id="@+id/btn_memory"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_memory"
+                    android:text="@string/memory" />
+
+                <TextView
                     android:id="@+id/btn_p_add"
                     style="@style/Tool.Accent"
                     android:drawableTop="@drawable/ic_add"
@@ -526,6 +570,38 @@
                     android:text="@string/fit" />
 
                 <TextView
+                    android:id="@+id/btn_pdf_spread"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_spread"
+                    android:text="@string/two_pages" />
+
+                <TextView
+                    android:id="@+id/btn_pdf_pages"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_pages"
+                    android:text="@string/pages" />
+
+                <TextView
+                    android:id="@+id/btn_pdf_search"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_search"
+                    android:text="@string/search" />
+
+                <TextView
+                    android:id="@+id/btn_pdf_snip"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_snip"
+                    android:text="@string/snip" />
+
+                <TextView
+                    android:id="@+id/btn_pdf_bookmark"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_bookmark"
+                    android:text="@string/bookmark" />
+
+                <View style="@style/ToolDivider" />
+
+                <TextView
                     android:id="@+id/btn_pdf_to_board"
                     style="@style/Tool"
                     android:drawableTop="@drawable/ic_image"
@@ -539,6 +615,76 @@
 
                 <TextView
                     android:id="@+id/btn_pdf_more"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_more"
+                    android:text="@string/more"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <!-- Choosing PDF pages for the board -->
+        <HorizontalScrollView
+            android:id="@+id/pdf_choose_tools"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:overScrollMode="never"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/btn_choose_cancel"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_close"
+                    android:text="@string/cancel" />
+
+                <View style="@style/ToolDivider" />
+
+                <TextView
+                    android:id="@+id/btn_choose_all"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_arrange"
+                    android:text="@string/all" />
+
+                <TextView
+                    android:id="@+id/btn_choose_none"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_reset"
+                    android:text="@string/none" />
+
+                <TextView
+                    android:id="@+id/btn_choose_pages"
+                    style="@style/Tool"
+                    android:drawableTop="@drawable/ic_pdf"
+                    android:text="@string/pages" />
+
+                <TextView
+                    android:id="@+id/tv_choose_count"
+                    android:layout_width="wrap_content"
+                    android:layout_height="58dp"
+                    android:fontFamily="sans-serif-medium"
+                    android:fontFeatureSettings="tnum"
+                    android:gravity="center"
+                    android:minWidth="76dp"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:text="-"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/btn_choose_add"
+                    style="@style/Tool.Accent"
+                    android:drawableTop="@drawable/ic_add"
+                    android:text="@string/add_pages" />
+
+                <TextView
+                    android:id="@+id/btn_choose_more"
                     style="@style/Tool"
                     android:drawableTop="@drawable/ic_more"
                     android:text="@string/more"

@@ -6,9 +6,9 @@
 
 A free reference companion for artists, for **Windows** and **Android**:
 
-- **Reference board** – an endless board for pictures and PDF pages. Move, resize, flip, rotate, black & white, copy and paste. Saved automatically.
-- **Gesture practice** – timed poses from a PDF art book, a folder, or your board images (30 s to 10 min per pose). Pause, skip, flip, black & white, zoom into a pose.
-- **PDF reader** – smooth scrolling and sharp zoom; even huge books open instantly because pages render as you scroll. Send a page to the board or practise from it. Remembers where you were.
+- **Reference board** – an endless board for pictures, PDF pages and notes. Move, resize, flip, rotate, crop, lock, copy and paste, with undo. Study values with black & white, value steps and squint blur, add a grid, pick colours, export the board as a PNG. Saved automatically, or as `.refpad` board files.
+- **Gesture practice** – timed poses from a PDF art book, a folder, or your board images (30 s to 10 min per pose), whole timed classes, memory mode and a practice history. Pause, skip, flip, black & white, zoom into a pose.
+- **PDF reader** – smooth scrolling and sharp zoom; even huge books open instantly because pages render as you scroll. Two pages side by side, page list, bookmarks, text search, and snipping part of a page onto the board. Remembers where you were.
 - **Float on top** – a small window that stays above your drawing app (Clip Studio Paint, Krita, Photoshop, ibisPaint, Infinite Painter…), with adjustable see-through.
 
 Free, no ads, no accounts, no tracking. See the [privacy policy](docs/privacy-policy.html).
@@ -36,7 +36,7 @@ The pictures shown are public-domain works from The Metropolitan Museum of Art a
 ## Download
 
 ### Windows 10 / 11 (64-bit)
-Download **`RefPad-Setup-<version>.exe`** from the [latest release](https://github.com/kathir262/REFERENCE-BOARD-/releases/latest) and double-click it.
+From the **Microsoft Store** (once published; it updates through the Store), or download **`RefPad-Setup-<version>.exe`** from the [latest release](https://github.com/kathir262/REFERENCE-BOARD-/releases/latest) and double-click it.
 It installs RefPad for your Windows user (no administrator rights needed) in `%LOCALAPPDATA%\Programs\RefPad`, adds Start menu and desktop shortcuts and an entry in *Settings → Apps*, and lets you double-click `.refpad` board files to open them.
 
 RefPad isn't code-signed yet, so the first time Windows may say "Windows protected your PC": click **More info → Run anyway**.
@@ -47,6 +47,11 @@ RefPad updates itself: it checks GitHub at most once a day (you can turn this of
 
 ### Android
 On Google Play (see [play-store/README.md](play-store/README.md) for the publishing guide).
+
+The Android app has the same tools: long-press a picture for crop, value steps, squint, grid, opacity, lock and
+*Float this picture*; the board toolbar has Undo / Redo, Crop, Note and Colour (picker). Practice has Class and
+Memory; the PDF reader has Two pages, Pages, Snip, Bookmark and (Android 15 and newer) Search. Open a `.refpad`
+file from the Files app or a chat, or drag pictures and PDFs in from another app in split screen.
 
 ---
 
@@ -62,11 +67,14 @@ On Google Play (see [play-store/README.md](play-store/README.md) for the publish
 | **Full screen** | ⋮ → Full screen | `F11` |
 
 **Board** – scroll to zoom, drag empty space (or middle button, or Space + drag) to move around, drag an image to move it, drag the yellow corner dot to resize, double-click an image to zoom to it, double-click empty space to fit everything, right-click for more.
-`H` flip · `G` black & white · `R` / `Shift+R` rotate · `Ctrl+C` copy · `Del` delete (with UNDO) · `Ctrl+A` select all · `Ctrl`-click to select several · `PgUp` / `PgDn` front / back · `F` fit · `Ctrl+Shift+A` arrange in rows.
+`Ctrl+Z` / `Ctrl+Y` undo / redo · `H` flip · `G` black & white · `R` / `Shift+R` rotate · `C` crop (drag the edges, `Enter` to finish) · `L` lock in place · `N` note · `I` pick a colour · `Ctrl+C` copy · `Del` delete · `Ctrl+A` select all · `Ctrl`-click to select several · `PgUp` / `PgDn` front / back · `F` fit · `Ctrl+Shift+A` arrange in rows · `Ctrl+E` export as PNG.
+Right-click an image for value steps (2–5 greys), squint (blur), a grid (2×2 to 8×8), opacity, and **Pin on top of other apps**. The background can be dark, neutral grey or light (⋮ → Background). Pictures can also be dragged in straight from a web page.
 
 **Practice** – `Space` play / pause · `←` `→` previous / next (or drag sideways) · `Home` restart the pose · scroll to zoom into a pose, double-click to reset · `H` flip · `G` black & white.
+**Class** runs a timed class (10, 30 or 60 minutes, or your own, like `10x30s, 5x1m, 2x5m`). **Memory** (`M`) hides each pose when its time is up so you draw it from memory (hold the mouse button to peek). **Practice history** shows your poses, minutes and streak.
 
 **PDF** – scroll, drag, or use `PgUp` / `PgDn` / `Space` · `Ctrl` + scroll to zoom · double-click or `F` switches between *fit width* and *whole page* · drag the scroll thumb on the right to jump through a long book · right-click a page to send it to the board or practise from it.
+`Ctrl+F` find text (`F3` next) · `S` snip: drag a box around part of a page to put just that on the board · `Ctrl+D` bookmark the page · **Two pages** side by side · **Pages** shows a list of page thumbnails.
 
 **Boards as files** – keep one board per project (say, one per manga chapter). Click the board name at the top left for *New board*, *Open board…*, *Save*, *Save as…* and your recent boards. A `.refpad` file holds the pictures too, so you can move it or copy it to another PC. A board that has a file saves itself when you switch boards or close RefPad; an untitled board asks first. RefPad also opens boards from RefPad 1.0 and BeeRef (`.bee`).
 
@@ -96,6 +104,13 @@ cd android
 gradlew assembleRelease   # APK for testing
 gradlew bundleRelease     # AAB for Google Play
 ```
+
+### Microsoft Store package
+```bash
+py -3.12 tools/build_windows.py
+py -3.12 tools/build_msix.py      # dist/RefPad-<version>.msix
+```
+See [microsoft-store/README.md](microsoft-store/README.md) for the one-time Partner Center setup and the listing texts.
 
 ---
 
@@ -133,11 +148,12 @@ refpad/                 Windows app (Python + Qt / PySide6)
   ui/pdf_view.py          PDF reader
   ui/widgets.py           adaptive toolbar, tabs, menus, status chip, empty states
   ui/dialogs.py           About / privacy / update dialogs
-tools/                  build script, icon tools, installer scripts
+tools/                  build scripts (Windows app, installer, Microsoft Store MSIX), icon tools
 tests/                  automated tests (pytest)
 android/                Android app (Kotlin)
 docs/privacy-policy.html  privacy policy (Android and Windows)
 play-store/             Google Play listing guide and graphics
+microsoft-store/        Microsoft Store guide and screenshots
 ```
 
 The Windows and Android apps share the same design and icons (`tools/gen_icons.py` copies the Android icons into the Windows app).

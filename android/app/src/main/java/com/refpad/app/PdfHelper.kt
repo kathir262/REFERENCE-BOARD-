@@ -2,6 +2,7 @@ package com.refpad.app
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.RectF
 import android.graphics.pdf.PdfRenderer
 import android.os.Handler
 import android.os.HandlerThread
@@ -232,7 +233,134 @@ object PdfPages {
     fun trim(all: Boolean) {
         main.post {
             if (all) cache.evictAll() else cache.trimToSize(CACHE_BYTES / 4)
+            if (all) thumbs.evictAll()
             failed.clear()
+        }
+    }
+
+    // ---------------------------------------------------------------- Page thumbnails (the page strip)
+
+    private const val THUMB_SIDE = 220
+    private val thumbs = object : LruCache<String, Bitmap>(10 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.width * value.height * 4
+    }
+    private val thumbsInFlight = HashSet<String>()
+    @Volatile
+    private var thumbsWanted: Set<String> = emptySet()
+
+    fun thumb(docId: String, page: Int): Bitmap? = thumbs.get(key(docId, page))
+
+    /** Renders small pictures of [pages] that are not ready yet (only the ones still wanted when their turn comes). */
+    fun requestThumbs(docId: String, pages: List<Int>) {
+        thumbsWanted = pages.mapTo(HashSet()) { key(docId, it) }
+        for (p in pages) {
+            val k = key(docId, p)
+            if (thumbs.get(k) != null || thumbsInFlight.contains(k) || failed.contains(k)) continue
+            thumbsInFlight.add(k)
+            worker.post {
+                var bmp: Bitmap? = null
+                if (thumbsWanted.contains(k)) {
+                    worker.removeCallbacks(closeIdle)
+                    try {
+                        val r = rendererFor(docId)
+                        if (r != null && p in 0 until r.pageCount) {
+                            bmp = ImageLoader.toDisplay(r.openPage(p).use { PdfHelper.renderPage(it, THUMB_SIDE) })
+                        }
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "Thumbnail $p failed", t)
+                    } finally {
+                        worker.postDelayed(closeIdle, 30_000)
+                    }
+                }
+                val out = bmp
+                main.post {
+                    thumbsInFlight.remove(k)
+                    if (out != null) {
+                        thumbs.put(k, out)
+                        for (l in listeners.toTypedArray()) l()
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Finds text in a PDF (Android 15 and newer, whose PDF engine can search). Runs on its own thread with its
+ * own copy of the PDF open, so reading stays smooth; results arrive a few pages at a time.
+ */
+object PdfSearch {
+    val supported: Boolean get() = android.os.Build.VERSION.SDK_INT >= 35
+
+    private const val MAX_HITS = 2000
+    private val main = Handler(Looper.getMainLooper())
+    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread({
+            Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+            r.run()
+        }, "refpad-search")
+    }
+    private val token = java.util.concurrent.atomic.AtomicInteger()
+
+    fun cancel() {
+        token.incrementAndGet()
+    }
+
+    /**
+     * Searches [docId] for [query]. [onHits] gets batches of matches (page, box as page fractions);
+     * [onDone] gets the total, or -1 if this PDF can't be searched.
+     */
+    fun search(
+        docId: String, query: String,
+        onHits: (List<PdfViewerView.Hit>) -> Unit, onDone: (Int) -> Unit
+    ) {
+        val my = token.incrementAndGet()
+        if (!supported || query.isBlank()) {
+            onDone(-1)
+            return
+        }
+        worker.execute {
+            var total = 0
+            var failed = false
+            try {
+                ParcelFileDescriptor.open(Storage.pdfFile(docId), ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                    PdfRenderer(pfd).use { r ->
+                        val batch = ArrayList<PdfViewerView.Hit>()
+                        for (i in 0 until r.pageCount) {
+                            if (token.get() != my || total >= MAX_HITS) break
+                            r.openPage(i).use { page -> found(page, i, query, batch) }
+                            if (batch.isNotEmpty() && (i % 8 == 7 || batch.size > 50)) {
+                                val send = ArrayList(batch)
+                                total += send.size
+                                batch.clear()
+                                main.post { if (token.get() == my) onHits(send) }
+                            }
+                        }
+                        if (batch.isNotEmpty() && token.get() == my) {
+                            val send = ArrayList(batch)
+                            total += send.size
+                            main.post { if (token.get() == my) onHits(send) }
+                        }
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.w("RefPad", "Search failed", t)
+                failed = total == 0
+            }
+            val n = total
+            main.post { if (token.get() == my) onDone(if (failed) -1 else n) }
+        }
+    }
+
+    @android.annotation.TargetApi(35)
+    private fun found(page: PdfRenderer.Page, index: Int, query: String, out: MutableList<PdfViewerView.Hit>) {
+        val w = page.width.toFloat().coerceAtLeast(1f)
+        val h = page.height.toFloat().coerceAtLeast(1f)
+        for (m in page.searchText(query)) {
+            // One match can cover several lines: one box around each part.
+            for (b in m.bounds) {
+                out.add(PdfViewerView.Hit(index, RectF(b.left / w, b.top / h, b.right / w, b.bottom / h)))
+            }
         }
     }
 }

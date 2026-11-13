@@ -100,6 +100,7 @@ def start(argv):
         return None, None, None
 
     # Heavy modules only after we know this is the one running copy.
+    from refpad import paths
     from refpad.core import images, importer, pdf, store, updater
     from refpad.core.timer import PracticeTimer
     from refpad.ui.window import MainWindow
@@ -110,8 +111,9 @@ def start(argv):
     state = store.init_state()
     timer = PracticeTimer(state)
     imp = importer.init_importer(state, engine)
-    updater.cleanup_leftovers()
-    updater.refresh_install_record()
+    if not paths.is_store_app():   # the Microsoft Store installs, updates and registers the Store copy
+        updater.cleanup_leftovers()
+        updater.refresh_install_record()
 
     win = MainWindow(state, timer, engine, imp)
     win.show_initial()

@@ -134,6 +134,12 @@ class PdfEngine(QObject):
             self._once_jobs.append(("once", norm(path), page, long_side, callback))
             self._cv.notify()
 
+    def render_region(self, path: str, page: int, frac, long_side: int, callback):
+        """Part of a page (fractions x, y, w, h of the page) as a picture; callback(QImage or None)."""
+        with self._cv:
+            self._once_jobs.append(("region", norm(path), page, (tuple(frac), long_side), callback))
+            self._cv.notify()
+
     def trim(self):
         """Frees rendered pages that no view needs right now."""
         wanted = {k for keys in self._wanted.values() for k in keys}
@@ -176,7 +182,7 @@ class PdfEngine(QObject):
                 self.pageReady.emit(key)
             else:
                 self._failed.add(key)
-        elif kind == "once":
+        elif kind in ("once", "region"):
             job[4](result if isinstance(result, QImage) else None)
 
     def _run(self):
@@ -241,6 +247,23 @@ class PdfEngine(QObject):
             opts.setScaledClipRect(QRect(x, y, w, h))
             return _flatten(doc.render(key.page, QSize(w, h), opts))
 
+        if kind == "region":
+            _, path, page, (frac, long_side), _cb = job
+            doc, _ = self._open(docs, path)
+            if doc is None or not 0 <= page < doc.pageCount():
+                return None
+            s = doc.pagePointSize(page)
+            a = s.height() / max(1.0, s.width())
+            fx, fy, fw, fh = frac
+            width = min(12000, max(64, round(long_side / max(1e-6, max(fw, fh * a)))))
+            full = QSize(width, max(1, round(width * a)))
+            clip = QRect(round(fx * full.width()), round(fy * full.height()),
+                         max(1, round(fw * full.width())), max(1, round(fh * full.height())))
+            opts = QPdfDocumentRenderOptions()
+            opts.setScaledSize(full)
+            opts.setScaledClipRect(clip)
+            return _flatten(doc.render(page, clip.size(), opts))
+
         # "once": a page as a picture whose long side is `long_side`
         _, path, page, long_side, _cb = job
         doc, _ = self._open(docs, path)
@@ -261,3 +284,44 @@ def init_engine() -> PdfEngine:
     global engine
     engine = PdfEngine()
     return engine
+
+
+def search(path: str, query: str, on_hits, cancelled, on_done):
+    """Finds `query` in every page (own thread, own copy of the document, so rendering carries on).
+    on_hits(list of (page, [QRectF in points])) is called on the UI thread as pages are searched."""
+    from refpad.core import images
+
+    def work():
+        doc = QPdfDocument()
+        if doc.load(path) != QPdfDocument.Error.None_:
+            return 0
+        q = query.lower()
+        found = 0
+        batch = []
+        for i in range(doc.pageCount()):
+            if cancelled():
+                return found
+            text = doc.getAllText(i).text().lower()
+            start = 0
+            while True:
+                j = text.find(q, start)
+                if j < 0:
+                    break
+                sel = doc.getSelectionAtIndex(i, j, len(q))
+                rects = [poly.boundingRect() for poly in sel.bounds()]
+                if rects:
+                    batch.append((i, rects))
+                    found += 1
+                start = j + max(1, len(q))
+                if found >= 5000:
+                    break
+            if batch and (i % 8 == 7 or found >= 5000):
+                images.post(on_hits, batch)
+                batch = []
+            if found >= 5000:
+                break
+        if batch:
+            images.post(on_hits, batch)
+        return found
+
+    images.run_async(work, on_done)

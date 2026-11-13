@@ -25,6 +25,9 @@ class MainActivity : Activity(), BoardController.Host {
         private const val REQ_IMAGES = 2
         private const val REQ_PDF = 3
         private const val REQ_FOLDER = 4
+        private const val REQ_OPEN_BOARD = 5
+        private const val REQ_CREATE_BOARD = 6
+        private const val REQ_EXPORT = 8
     }
 
     private lateinit var controller: BoardController
@@ -71,6 +74,7 @@ class MainActivity : Activity(), BoardController.Host {
 
         // Don't import a share twice when Android recreates the screen.
         if (savedInstanceState == null) root.post { handleShare(intent) }
+        setupDrop(root)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -88,6 +92,7 @@ class MainActivity : Activity(), BoardController.Host {
     override fun onStop() {
         controller.detach()
         PracticeTimer.hostHidden()
+        BoardFiles.saveIfNeeded(this)
         DataManager.saveNow()
         super.onStop()
     }
@@ -222,6 +227,30 @@ class MainActivity : Activity(), BoardController.Host {
 
     override fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
 
+    override fun openBoardFile() {
+        Pickers.launch(this, Pickers.openBoard(), null, REQ_OPEN_BOARD)
+    }
+
+    override fun createBoardFile(suggestedName: String) {
+        if (!Pickers.launch(this, Pickers.createBoard(suggestedName), null, REQ_CREATE_BOARD)) BoardFiles.afterSaveAs = null
+    }
+
+    override fun askText(title: String, hint: String, initial: String, multiLine: Boolean, onOk: (String) -> Unit) =
+        Pickers.askText(this, overlay = false, title = title, hint = hint, initial = initial, multiLine = multiLine, onOk = onOk)
+
+    override fun createExportFile(suggestedName: String) {
+        Pickers.launch(this, Pickers.createPng(suggestedName), null, REQ_EXPORT)
+    }
+
+    override fun showHistory() = HistoryDialog.show(this, overlay = false)
+
+    override val canFloat = true
+
+    override fun floatItem(item: RefBoardItem) {
+        DataManager.floatFocusId = item.id
+        startFloating()
+    }
+
     // ---------------------------------------------------------------- Results
 
     @Deprecated("Plain Activity result API; this app uses no AndroidX libraries")
@@ -232,23 +261,37 @@ class MainActivity : Activity(), BoardController.Host {
             else toast("Allow \"Appear on top\" to use the floating window")
             return
         }
+        if (requestCode == REQ_CREATE_BOARD && resultCode != RESULT_OK) BoardFiles.afterSaveAs = null
         if (resultCode != RESULT_OK) return
         when (requestCode) {
+            REQ_OPEN_BOARD -> data?.data?.let { controller.openBoard(it) }
+            REQ_CREATE_BOARD -> data?.data?.let { BoardFiles.created(this, it) }
+            REQ_EXPORT -> data?.data?.let { BoardExport.export(this, it) }
             REQ_IMAGES -> Importer.importImages(this, Importer.urisFrom(data), pendingTarget)
             REQ_PDF -> Importer.importPdfs(this, Importer.urisFrom(data), pendingTarget)
             REQ_FOLDER -> data?.data?.let { Importer.importFolder(this, it, pendingTarget) }
         }
     }
 
-    /** Images or a PDF shared from another app (Gallery, browser, Files…). */
+    /** Images or a PDF shared from another app (Gallery, browser, Files…), or a board file opened from Files. */
     private fun handleShare(intent: Intent?) {
         if (intent == null) return
+        if (intent.action == Intent.ACTION_VIEW) {
+            intent.data?.let { controller.openBoard(it, fromOtherApp = true) }
+            return
+        }
         val uris: List<Uri> = when (intent.action) {
             Intent.ACTION_SEND -> listOfNotNull(streamExtra(intent))
             Intent.ACTION_SEND_MULTIPLE -> streamListExtra(intent)
             else -> return
         }
         if (uris.isEmpty()) return
+        // A .refpad board shared from a chat or cloud app.
+        val type = intent.type ?: ""
+        if (!type.startsWith("image/") && type != "application/pdf") {
+            controller.openBoard(uris[0], fromOtherApp = true)
+            return
+        }
         val isPdf = intent.type == "application/pdf"
         controller.chooseDestination(if (isPdf) "this PDF" else if (uris.size == 1) "this image" else "${uris.size} images", isPdf) { target ->
             if (isPdf) Importer.importPdfs(this, uris, target) else Importer.importImages(this, uris, target)
@@ -264,6 +307,90 @@ class MainActivity : Activity(), BoardController.Host {
     private fun streamListExtra(intent: Intent): List<Uri> =
         (if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
         else intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)) ?: emptyList()
+
+    // ---------------------------------------------------------------- Drag and drop
+
+    /**
+     * Pictures, PDFs and boards dragged in from another app (split screen, a tablet's taskbar, Samsung DeX…).
+     * Pictures go to the board (or practice, when that is showing); a PDF opens in the reader, or its
+     * page chooser on the board.
+     */
+    private fun setupDrop(root: View) {
+        root.setOnDragListener { _, event ->
+            when (event.action) {
+                android.view.DragEvent.ACTION_DRAG_STARTED -> {
+                    val d = event.clipDescription
+                    d != null && (d.hasMimeType("image/*") || d.hasMimeType("application/pdf") ||
+                        d.hasMimeType("application/octet-stream") || d.hasMimeType("application/zip"))
+                }
+                android.view.DragEvent.ACTION_DRAG_ENTERED -> {
+                    if (DataManager.status == null) {
+                        DataManager.setStatus("Drop to add")
+                        dropHint = true
+                    }
+                    true
+                }
+                android.view.DragEvent.ACTION_DRAG_EXITED, android.view.DragEvent.ACTION_DRAG_ENDED -> {
+                    if (dropHint) {
+                        dropHint = false
+                        DataManager.setStatus(null)
+                    }
+                    true
+                }
+                android.view.DragEvent.ACTION_DROP -> {
+                    if (dropHint) {
+                        dropHint = false
+                        DataManager.setStatus(null)
+                    }
+                    dropped(event)
+                    true
+                }
+                else -> true
+            }
+        }
+    }
+
+    private var dropHint = false
+
+    private fun dropped(event: android.view.DragEvent) {
+        val clip = event.clipData ?: return
+        val uris = (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
+        if (uris.isEmpty()) return
+        // Lets RefPad read files from the other app; released once they are open.
+        val perms = try {
+            requestDragAndDropPermissions(event)
+        } catch (e: Exception) {
+            null
+        }
+        val release = { try { perms?.release() } catch (_: Exception) {} }
+        val images = ArrayList<Uri>()
+        val pdfs = ArrayList<Uri>()
+        var board: Uri? = null
+        for (u in uris) {
+            val type = try { contentResolver.getType(u) } catch (_: Exception) { null } ?: ""
+            when {
+                type.startsWith("image/") -> images.add(u)
+                type == "application/pdf" -> pdfs.add(u)
+                board == null -> board = u
+            }
+        }
+        val mode = DataManager.mode
+        if (images.isNotEmpty()) {
+            Importer.importImages(this, images, if (mode == DataManager.MODE_PRACTICE) Importer.Target.PRACTICE else Importer.Target.BOARD) {
+                if (pdfs.isEmpty()) release()
+            }
+        }
+        if (pdfs.isNotEmpty()) {
+            val target = when (mode) {
+                DataManager.MODE_PRACTICE -> Importer.Target.PRACTICE
+                DataManager.MODE_BOARD -> Importer.Target.BOARD
+                else -> Importer.Target.VIEWER
+            }
+            Importer.importPdfs(this, pdfs, target) { release() }
+        }
+        board?.let { if (images.isEmpty() && pdfs.isEmpty()) controller.openBoard(it, fromOtherApp = true) }
+        if (images.isEmpty() && pdfs.isEmpty() && board == null) release()
+    }
 
     // ---------------------------------------------------------------- Floating window
 

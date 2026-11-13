@@ -114,7 +114,7 @@ def check():
 
 def can_self_update() -> bool:
     """True when running the packaged app from a folder we may replace."""
-    if not paths.is_frozen():
+    if not paths.is_frozen() or paths.is_store_app():
         return False
     app = paths.install_dir()
     if not (app / EXE_NAME).exists():

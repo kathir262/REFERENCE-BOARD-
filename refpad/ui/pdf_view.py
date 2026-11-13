@@ -1,13 +1,14 @@
-"""The PDF reader: pages in one continuous column, rendered only when they come into view.
+"""The PDF reader: pages in one continuous column (or two side by side), rendered only when they come into view.
 
 Wheel scrolls smoothly, Ctrl+wheel zooms around the cursor, drag to move the page, double-click to switch
 between "fit width" and "whole page". After zooming in, the visible part of the page is rendered again at
-full sharpness. Each PDF remembers where you were.
+full sharpness. Each PDF remembers where you were, its bookmarks and whether it shows two pages at a time.
+Also: search highlights, and "snip" mode to drag a box around part of a page and put it on the board.
 """
 import math
 
 from PySide6.QtCore import QElapsedTimer, QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
 from refpad.core import pdf
@@ -21,7 +22,9 @@ TILE_ALIGN = 64
 
 class PdfView(QWidget):
     pageChanged = Signal()
-    contextRequested = Signal(int, object)   # page index, global QPointF
+    contextRequested = Signal(int, object)        # page index, global QPointF
+    snipped = Signal(int, object)                 # page, (x, y, w, h) as fractions of the page
+    snipModeChanged = Signal(bool)
 
     def __init__(self, state, engine, parent=None):
         super().__init__(parent)
@@ -32,12 +35,17 @@ class PdfView(QWidget):
         self.setMouseTracking(True)
         self.pad_top = 0
         self.pad_bottom = 0
+        self.pad_left = 0          # room taken by the page list on the left
         self.doc = None
         self.info = None
         self._key = ""
         self._pw = 0.0             # page width on screen (px)
+        self._cw = 0.0             # content width (one page, or two side by side)
         self._tops: list = []      # page top y in content px
         self._heights: list = []
+        self._xs: list = []        # page x inside the content
+        self._rows: list = []      # (top, height, [pages])
+        self._row_of: list = []
         self._content_h = 0.0
         self.sx = 0.0              # scroll position (content px)
         self.sy = 0.0
@@ -49,6 +57,10 @@ class PdfView(QWidget):
         self._want = ()
         self._tiles_on = False
         self.current_page = 0
+        self.hits: list = []       # search results: (page, [QRectF in page points])
+        self.hit_index = -1
+        self.snipping = False
+        self._snip = None          # (page, start QPointF, end QPointF) while dragging
         self._clock = QElapsedTimer()
         self._anim = QTimer(self, interval=12, timeout=self._anim_step)
         self._idle = QTimer(self, singleShot=True, interval=160, timeout=self._sharpen)
@@ -69,9 +81,11 @@ class PdfView(QWidget):
         self.doc = doc
         self.info = None
         self._key = pdf.norm(doc.path) if doc else ""
-        self._tops, self._heights = [], []
+        self._tops, self._heights, self._xs, self._rows, self._row_of = [], [], [], [], []
         self._ty = None
         self._tiles_on = False
+        self.hits, self.hit_index = [], -1
+        self.set_snipping(False)
         if doc is not None:
             self.info = self.engine.info(doc.path)
             self._relayout(restore=True)
@@ -96,82 +110,147 @@ class PdfView(QWidget):
     def page_count(self) -> int:
         return self.info.count if self.ready else 0
 
+    @property
+    def spread(self) -> bool:
+        return bool(self.doc and self.doc.spread)
+
+    def set_spread(self, on: bool):
+        if self.doc is None or self.doc.spread == on:
+            return
+        page = self.current_page
+        self.doc.spread = on
+        self._relayout(restore=True)
+        self.go_to_page(page, smooth=False)
+        self.state.schedule_save()
+        self.pageChanged.emit()
+
     # ------------------------------------------------------------------ layout
 
     def _avail(self):
-        return max(100.0, self.width() - 2 * SIDE), max(100.0, self.height() - self.pad_top - self.pad_bottom)
+        return (max(100.0, self.width() - self.pad_left - 2 * SIDE),
+                max(100.0, self.height() - self.pad_top - self.pad_bottom))
+
+    def _base_width(self) -> float:
+        """Page width at zoom 1: the whole width, or half of it with two pages side by side."""
+        aw, _ = self._avail()
+        return (aw - GAP) / 2 if self.spread else aw
+
+    def _row_pages(self):
+        n = self.page_count
+        if not self.spread:
+            return [[i] for i in range(n)]
+        rows = [[0]] if n else []                     # the cover on its own, like a book
+        rows += [list(range(i, min(i + 2, n))) for i in range(1, n, 2)]
+        return rows
 
     def _whole_page_zoom(self) -> float:
-        aw, ah = self._avail()
-        a = self.info.aspect(self.current_page) if self.ready else 1.414
-        return min(1.0, (ah - 2 * GAP) / a / aw)
+        _, ah = self._avail()
+        if not self.ready:
+            return 1.0
+        rows = self._row_pages()
+        r = self._row_of[self.current_page] if self._row_of and self.current_page < len(self._row_of) else 0
+        pages = rows[min(r, len(rows) - 1)]
+        a = max(self.info.aspect(i) for i in pages)
+        return min(1.0, (ah - 2 * GAP) / a / max(1.0, self._base_width()))
 
     def effective_zoom(self) -> float:
         if self.doc is None:
             return 1.0
         return self._whole_page_zoom() if self.doc.zoom <= 0 else self.doc.zoom
 
+    def _layout_rows(self):
+        n = self.page_count
+        self._pw = self._base_width() * self.effective_zoom()
+        two = self.spread
+        self._cw = 2 * self._pw + GAP if two else self._pw
+        self._tops, self._heights, self._xs = [0.0] * n, [0.0] * n, [0.0] * n
+        self._row_of, self._rows = [0] * n, []
+        y = self.pad_top + GAP
+        for r, pages in enumerate(self._row_pages()):
+            hs = [self._pw * self.info.aspect(i) for i in pages]
+            for k, i in enumerate(pages):
+                self._tops[i], self._heights[i] = y, hs[k]
+                if len(pages) == 1:
+                    self._xs[i] = (self._cw - self._pw) / 2
+                else:
+                    self._xs[i] = k * (self._pw + GAP)
+                self._row_of[i] = r
+            self._rows.append((y, max(hs), pages))
+            y += max(hs) + GAP
+        self._content_h = y + self.pad_bottom
+
     def _relayout(self, restore: bool = False):
         if not self.ready:
             return
-        anchor = None if restore else self._position()
-        aw, _ = self._avail()
-        self._pw = aw * self.effective_zoom()
-        y = self.pad_top + GAP
-        self._tops, self._heights = [], []
-        for i in range(self.info.count):
-            h = self._pw * self.info.aspect(i)
-            self._tops.append(y)
-            self._heights.append(h)
-            y += h + GAP
-        self._content_h = y + self.pad_bottom
+        anchor = None if (restore or not self._rows) else self._position()
+        self._layout_rows()
         page, offset = (self.doc.page, self.doc.offset) if anchor is None else anchor
         self._set_position(page, offset)
 
     def _position(self):
         """(page, fraction) at the top of the view."""
-        if not self._tops:
+        if not self._rows:
             return 0, 0.0
         y = self.sy + self.pad_top + GAP
-        i = self._page_at_y(y)
-        return i, max(0.0, min(1.0, (y - self._tops[i]) / max(1.0, self._heights[i])))
+        r = self._row_at_y(y)
+        top, h, pages = self._rows[r]
+        return pages[0], max(0.0, min(1.0, (y - top) / max(1.0, h)))
 
     def _set_position(self, page: int, offset: float):
-        if not self._tops:
+        if not self._rows:
             return
         page = max(0, min(page, len(self._tops) - 1))
-        self.sy = self._tops[page] + offset * self._heights[page] - self.pad_top - GAP
+        top, h, _ = self._rows[self._row_of[page]]
+        self.sy = top + offset * h - self.pad_top - GAP
         self._clamp()
         self._ty = None
         self._update_current()
 
-    def _page_at_y(self, y: float) -> int:
-        lo, hi = 0, len(self._tops) - 1
+    def _row_at_y(self, y: float) -> int:
+        lo, hi = 0, len(self._rows) - 1
         while lo < hi:
             mid = (lo + hi + 1) // 2
-            if self._tops[mid] <= y:
+            if self._rows[mid][0] <= y:
                 lo = mid
             else:
                 hi = mid - 1
         return lo
 
+    def _page_at_y(self, y: float) -> int:
+        return self._rows[self._row_at_y(y)][2][0] if self._rows else 0
+
+    def page_at(self, pos: QPointF) -> int:
+        """The page under a point on screen, or -1."""
+        if not self._rows:
+            return -1
+        for i in self._rows[self._row_at_y(self.sy + pos.y())][2]:
+            if self.page_rect(i).contains(pos):
+                return i
+        return -1
+
     def _max_sy(self) -> float:
         return max(0.0, self._content_h - self.height())
 
     def _max_sx(self) -> float:
-        return max(0.0, self._pw + 2 * SIDE - self.width())
+        return max(0.0, self._cw + 2 * SIDE - (self.width() - self.pad_left))
 
     def _clamp(self):
         self.sy = max(0.0, min(self.sy, self._max_sy()))
         mx = self._max_sx()
         self.sx = max(0.0, min(self.sx, mx)) if mx > 0 else 0.0
 
-    def _page_left(self) -> float:
+    def _content_left(self) -> float:
         mx = self._max_sx()
-        return (SIDE - self.sx) if mx > 0 else (self.width() - self._pw) / 2
+        if mx > 0:
+            return self.pad_left + SIDE - self.sx
+        return self.pad_left + (self.width() - self.pad_left - self._cw) / 2
+
+    def page_rect(self, i: int) -> QRectF:
+        """Where page i is on screen."""
+        return QRectF(self._content_left() + self._xs[i], self._tops[i] - self.sy, self._pw, self._heights[i])
 
     def _update_current(self):
-        if not self._tops:
+        if not self._rows:
             return
         mid = self.sy + self.pad_top + (self.height() - self.pad_top - self.pad_bottom) / 2
         i = self._page_at_y(mid)
@@ -181,7 +260,7 @@ class PdfView(QWidget):
         self._save.start()
 
     def _remember(self):
-        if self.doc is not None and self._tops:
+        if self.doc is not None and self._rows:
             self.doc.page, self.doc.offset = self._position()
             self.state.schedule_save()
 
@@ -226,11 +305,11 @@ class PdfView(QWidget):
         self.update()
         self._idle.start()
 
-    def go_to_page(self, page: int, smooth: bool = True):
-        if not self._tops:
+    def go_to_page(self, page: int, smooth: bool = True, offset: float = 0.0):
+        if not self._rows:
             return
         page = max(0, min(page, len(self._tops) - 1))
-        target = self._tops[page] - self.pad_top - GAP
+        target = self._tops[page] + offset - self.pad_top - GAP
         if smooth:
             self.scroll_by(target - (self._ty if self._ty is not None else self.sy))
         else:
@@ -238,38 +317,38 @@ class PdfView(QWidget):
             self._after_scroll()
 
     def next_page(self):
-        self.go_to_page(self.current_page + 1)
+        row = self._row_of[self.current_page] if self._row_of else 0
+        if row + 1 < len(self._rows):
+            self.go_to_page(self._rows[row + 1][2][0])
 
     def prev_page(self):
-        top = self._tops[self.current_page] - self.pad_top - GAP if self._tops else 0
-        self.go_to_page(self.current_page - 1 if self.sy <= top + 2 else self.current_page)
+        if not self._rows:
+            return
+        row = self._row_of[self.current_page]
+        top = self._rows[row][0] - self.pad_top - GAP
+        if self.sy <= top + 2 and row > 0:
+            row -= 1
+        self.go_to_page(self._rows[row][2][0])
 
     # ------------------------------------------------------------------ zoom
 
     def set_zoom(self, zoom: float, anchor: QPointF = None):
         if self.doc is None or not self.ready:
             return
-        anchor = anchor or QPointF(self.width() / 2, self.pad_top + (self.height() - self.pad_top - self.pad_bottom) / 2)
+        anchor = anchor or QPointF(self.pad_left + (self.width() - self.pad_left) / 2,
+                                   self.pad_top + (self.height() - self.pad_top - self.pad_bottom) / 2)
         cy = self.sy + anchor.y()
-        i = self._page_at_y(cy)
-        fy = (cy - self._tops[i]) / max(1.0, self._heights[i])
-        fx = (anchor.x() - self._page_left()) / max(1.0, self._pw)
+        r = self._row_at_y(cy)
+        top, h, _ = self._rows[r]
+        fy = (cy - top) / max(1.0, h)
+        fx = (anchor.x() - self._content_left()) / max(1.0, self._cw)
         self.doc.zoom = max(0.2, min(8.0, zoom)) if zoom > 0 else zoom
-        self._relayout_keep(i, fy, fx, anchor)
-
-    def _relayout_keep(self, i, fy, fx, anchor):
-        aw, _ = self._avail()
-        self._pw = aw * self.effective_zoom()
-        y = self.pad_top + GAP
-        for j in range(len(self._tops)):
-            h = self._pw * self.info.aspect(j)
-            self._tops[j], self._heights[j] = y, h
-            y += h + GAP
-        self._content_h = y + self.pad_bottom
-        self.sy = self._tops[i] + fy * self._heights[i] - anchor.y()
+        self._layout_rows()
+        top, h, _ = self._rows[r]
+        self.sy = top + fy * h - anchor.y()
         self._ty = None
         if self._max_sx() > 0:
-            self.sx = SIDE + fx * self._pw - anchor.x()
+            self.sx = SIDE + fx * self._cw - (anchor.x() - self.pad_left)
         self._clamp()
         self._update_current()
         self.update()
@@ -286,11 +365,83 @@ class PdfView(QWidget):
         if self.doc.zoom <= 0 or abs(self.effective_zoom() - self._whole_page_zoom()) < 0.01:
             self.set_zoom(1.0)
         else:
+            page = self.current_page
             self.set_zoom(-1)
-            self.go_to_page(self.current_page, smooth=False)
+            self.go_to_page(page, smooth=False)
 
     def fit_label(self) -> str:
         return "Fit width" if self.doc is not None and self.doc.zoom <= 0 else "Whole page"
+
+    # ------------------------------------------------------------------ bookmarks
+
+    def toggle_bookmark(self, page: int = None) -> bool:
+        """Adds or removes a bookmark; returns True if the page is now bookmarked."""
+        if self.doc is None:
+            return False
+        page = self.current_page if page is None else page
+        marks = set(self.doc.bookmarks)
+        marks ^= {page}
+        self.doc.bookmarks = sorted(marks)
+        self.state.schedule_save()
+        self.update()
+        self.pageChanged.emit()
+        return page in marks
+
+    # ------------------------------------------------------------------ search
+
+    def set_hits(self, hits, index: int = -1):
+        self.hits, self.hit_index = hits, index
+        self.update()
+
+    def show_hit(self, index: int):
+        if not self.hits:
+            return
+        self.hit_index = index % len(self.hits)
+        page, rects = self.hits[self.hit_index]
+        if self.ready and rects:
+            k = self._pw / max(1.0, self.info.sizes[page][0])
+            y = rects[0].top() * k
+            self.go_to_page(page, smooth=True, offset=max(0.0, y - (self.height() - self.pad_top - self.pad_bottom) / 3))
+        self.update()
+
+    def _paint_hits(self, p: QPainter, i: int, r: QRectF):
+        if not self.hits:
+            return
+        k = r.width() / max(1.0, self.info.sizes[i][0])
+        for n, (page, rects) in enumerate(self.hits):
+            if page != i:
+                continue
+            current = n == self.hit_index
+            p.setPen(QPen(theme.color("#D97706"), 2) if current else Qt.PenStyle.NoPen)
+            p.setBrush(theme.color(theme.ACCENT, 0.55 if current else 0.32))
+            for q in rects:
+                p.drawRect(QRectF(r.x() + q.x() * k - 1, r.y() + q.y() * k - 1, q.width() * k + 2, q.height() * k + 2))
+
+    # ------------------------------------------------------------------ snip
+
+    def set_snipping(self, on: bool):
+        if on == self.snipping:
+            return
+        self.snipping = on
+        self._snip = None
+        if on:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self.unsetCursor()
+        self.snipModeChanged.emit(on)
+        self.update()
+
+    def _paint_snip(self, p: QPainter):
+        page, a, b = self._snip
+        r = QRectF(a, b).normalized().intersected(self.page_rect(page))
+        dim = QPainterPath()
+        dim.addRect(self.page_rect(page))
+        hole = QPainterPath()
+        hole.addRect(r)
+        p.fillPath(dim.subtracted(hole), QColor(0, 0, 0, 110))
+        p.setPen(QPen(theme.color(theme.ACCENT), 2, Qt.PenStyle.DashLine))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(r)
 
     # ------------------------------------------------------------------ painting
 
@@ -302,15 +453,15 @@ class PdfView(QWidget):
         return pdf.Key(self._key, i, bucket, None)
 
     def _visible_pages(self):
-        if not self._tops:
+        if not self._rows:
             return []
         top, bottom = self.sy, self.sy + self.height()
-        i = self._page_at_y(top)
+        r = self._row_at_y(top)
         out = []
-        while i < len(self._tops) and self._tops[i] < bottom:
-            if self._tops[i] + self._heights[i] > top:
-                out.append(i)
-            i += 1
+        while r < len(self._rows) and self._rows[r][0] < bottom:
+            if self._rows[r][0] + self._rows[r][1] > top:
+                out += self._rows[r][2]
+            r += 1
         return out
 
     def _tile_key(self, i: int):
@@ -319,9 +470,9 @@ class PdfView(QWidget):
         if dw <= pdf.MAX_PAGE_WIDTH * 1.02:
             return None
         dpr = self.devicePixelRatioF()
-        left = self._page_left()
-        top = self._tops[i] - self.sy
-        x0 = max(0.0, -left) * dpr
+        pr = self.page_rect(i)
+        left, top = pr.left(), pr.top()
+        x0 = max(0.0, self.pad_left - left) * dpr
         y0 = max(0.0, -top) * dpr
         x1 = min(self._pw, self.width() - left) * dpr
         y1 = min(self._heights[i], self.height() - top) * dpr
@@ -344,15 +495,15 @@ class PdfView(QWidget):
             f.setPointSizeF(11)
             p.setFont(f)
             text = self.info.error if self.info is not None else f"Opening “{self.doc.title}”…"
-            p.drawText(self.rect().adjusted(40, self.pad_top, -40, -self.pad_bottom),
+            p.drawText(self.rect().adjusted(40 + self.pad_left, self.pad_top, -40, -self.pad_bottom),
                        Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, text)
             return
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         dpr = self.devicePixelRatioF()
-        left = self._page_left()
+        marks = set(self.doc.bookmarks)
         keys = []
         for i in self._visible_pages():
-            r = QRectF(left, self._tops[i] - self.sy, self._pw, self._heights[i])
+            r = self.page_rect(i)
             base = self._base_key(i)
             keys.append(base)
             img = self.engine.page(base) or self.engine.best_page(self._key, i, base.width)
@@ -371,6 +522,11 @@ class PdfView(QWidget):
                     if tile is not None:
                         x, y, w, h = tk.clip
                         p.drawImage(QRectF(r.x() + x / dpr, r.y() + y / dpr, w / dpr, h / dpr), tile)
+            self._paint_hits(p, i, r)
+            if i in marks:
+                self._paint_ribbon(p, r)
+        if self._snip:
+            self._paint_snip(p)
         self._paint_bar(p)
         # Read ahead: the next two pages and the one before.
         if keys:
@@ -383,6 +539,24 @@ class PdfView(QWidget):
         if keys != self._want:
             self._want = keys
             self.engine.want(self, keys)
+
+    @staticmethod
+    def _paint_ribbon(p: QPainter, r: QRectF):
+        w = max(10.0, min(22.0, r.width() * 0.045))
+        x, y = r.right() - w * 1.8, r.top()
+        path = QPainterPath()
+        path.moveTo(x, y)
+        path.lineTo(x + w, y)
+        path.lineTo(x + w, y + w * 1.7)
+        path.lineTo(x + w / 2, y + w * 1.25)
+        path.lineTo(x, y + w * 1.7)
+        path.closeSubpath()
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(theme.color(theme.ACCENT))
+        p.drawPath(path)
+        p.restore()
 
     def _bar_geometry(self):
         top = self.pad_top + 4
@@ -449,8 +623,16 @@ class PdfView(QWidget):
         self.setFocus(Qt.FocusReason.MouseFocusReason)
         pos = e.position()
         if e.button() == Qt.MouseButton.RightButton:
-            if self.ready:
-                self.contextRequested.emit(self._page_at_y(self.sy + pos.y()), e.globalPosition())
+            if self.snipping:
+                self.set_snipping(False)
+            elif self.ready:
+                page = self.page_at(pos)
+                self.contextRequested.emit(page if page >= 0 else self._page_at_y(self.sy + pos.y()), e.globalPosition())
+            return
+        if self.snipping and e.button() == Qt.MouseButton.LeftButton:
+            page = self.page_at(pos)
+            if page >= 0:
+                self._snip = (page, pos, pos)
             return
         g = self._bar_geometry()
         if e.button() == Qt.MouseButton.LeftButton and g and pos.x() >= self.width() - BAR_W - 12:
@@ -481,6 +663,11 @@ class PdfView(QWidget):
 
     def mouseMoveEvent(self, e):
         pos = e.position()
+        if self._snip:
+            page, a, _ = self._snip
+            self._snip = (page, a, pos)
+            self.update()
+            return
         if self._thumb is not None:
             g = self._bar_geometry()
             if g:
@@ -503,13 +690,25 @@ class PdfView(QWidget):
         self._after_scroll()
 
     def mouseReleaseEvent(self, e):
+        if self._snip:
+            page, a, b = self._snip
+            self._snip = None
+            pr = self.page_rect(page)
+            r = QRectF(a, b).normalized().intersected(pr)
+            if r.width() >= 12 and r.height() >= 12:
+                frac = ((r.left() - pr.left()) / pr.width(), (r.top() - pr.top()) / pr.height(),
+                        r.width() / pr.width(), r.height() / pr.height())
+                self.snipped.emit(page, frac)
+            self.update()
+            return
         if self._thumb is not None:
             self._thumb = None
             self.update()
             self._idle.start()
             return
         d, self._drag = self._drag, None
-        self.unsetCursor()
+        if not self.snipping:
+            self.unsetCursor()
         if d and len(d["samples"]) >= 2:
             (y0, t0), (y1, t1) = d["samples"][0], d["samples"][-1]
             if 0 < t1 - t0 < 160 and self._clock_ms() - t1 < 60:
@@ -518,13 +717,17 @@ class PdfView(QWidget):
                 self._anim.start()
 
     def mouseDoubleClickEvent(self, e):
+        if self.snipping:
+            return
         if e.button() == Qt.MouseButton.LeftButton and e.position().x() < self.width() - BAR_W - 12:
             self.toggle_fit()
 
     def keyPressEvent(self, e):
         k = e.key()
         view_h = self.height() - self.pad_top - self.pad_bottom
-        if k in (Qt.Key.Key_Down, Qt.Key.Key_J):
+        if k == Qt.Key.Key_Escape and self.snipping:
+            self.set_snipping(False)
+        elif k in (Qt.Key.Key_Down, Qt.Key.Key_J):
             self.scroll_by(80)
         elif k in (Qt.Key.Key_Up, Qt.Key.Key_K):
             self.scroll_by(-80)
@@ -544,22 +747,25 @@ class PdfView(QWidget):
             super().keyPressEvent(e)
 
     def resizeEvent(self, e):
-        if self.ready and self._tops:
+        if self.ready and self._rows:
             pos = self._position()
             self._relayout()
             self._set_position(*pos)
         self._tiles_on = False
         self._idle.start()
 
-    def set_padding(self, top: int, bottom: int):
-        if (top, bottom) != (self.pad_top, self.pad_bottom):
-            self.pad_top, self.pad_bottom = top, bottom
-            if self.ready and self._tops:
+    def set_padding(self, top: int, bottom: int, left: int = None):
+        left = self.pad_left if left is None else left
+        if (top, bottom, left) != (self.pad_top, self.pad_bottom, self.pad_left):
+            self.pad_top, self.pad_bottom, self.pad_left = top, bottom, left
+            if self.ready and self._rows:
                 pos = self._position()
                 self._relayout()
                 self._set_position(*pos)
+            self.update()
 
     def hideEvent(self, e):
         self._remember()
         self.engine.release(self)
         self._want = ()
+        self.set_snipping(False)

@@ -26,7 +26,6 @@ object Importer {
     enum class Target { BOARD, PRACTICE, VIEWER }
 
     private const val TAG = "RefPad"
-    const val BOARD_PDF_MAX_PAGES = 30
     private const val BOARD_PDF_LONG_SIDE = 1200
     private const val FOLDER_MAX_IMAGES = 60
 
@@ -73,7 +72,7 @@ object Importer {
             Storage.io.execute {
                 for ((pfd, name) in files) {
                     when (target) {
-                        Target.BOARD -> pdfToBoard(app, pfd)
+                        Target.BOARD -> pdfToViewer(app, pfd, name, choosePages = true)
                         Target.PRACTICE -> pdfToPractice(app, pfd)
                         Target.VIEWER -> pdfToViewer(app, pfd, name)
                     }
@@ -100,6 +99,94 @@ object Importer {
                 toast(app, "Could not add that page")
             }
             status(null)
+        }
+    }
+
+    /** Puts part of a page (a snip; [frac] is the area as fractions of the page) on the board as a picture. */
+    fun regionToBoard(context: Context, doc: ViewerDoc, page: Int, frac: android.graphics.RectF) {
+        val app = context.applicationContext
+        DataManager.setStatus("Adding the snip to the board…")
+        Storage.io.execute {
+            try {
+                val bmp = PdfRenderer(ParcelFileDescriptor.open(Storage.pdfFile(doc.docId), ParcelFileDescriptor.MODE_READ_ONLY)).use { r ->
+                    r.openPage(page).use { p ->
+                        val rw = frac.width() * p.width
+                        val rh = frac.height() * p.height
+                        // Sharp: the snip's long side becomes the board's picture size, whatever the zoom was.
+                        val s = (ImageLoader.MAX_IMAGE_SIDE / maxOf(rw, rh, 1f)).coerceAtMost(12000f / maxOf(p.width, p.height, 1))
+                        val w = (rw * s).toInt().coerceAtLeast(1)
+                        val h = (rh * s).toInt().coerceAtLeast(1)
+                        val out = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                        out.eraseColor(android.graphics.Color.WHITE)
+                        val m = android.graphics.Matrix()
+                        m.setScale(s, s)
+                        m.postTranslate(-frac.left * p.width * s, -frac.top * p.height * s)
+                        p.render(out, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        out.setHasAlpha(false)
+                        out
+                    }
+                }
+                val image = ImageLoader.store(bmp)
+                main.post {
+                    val item = DataManager.addToBoard(image)
+                    DataManager.setStatus(null)
+                    toast(app, "Snip from page ${page + 1} added to the board")
+                    item
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Snip failed", t)
+                status(null)
+                toast(app, "Could not add that part of the page")
+            }
+        }
+    }
+
+    /**
+     * Adds the chosen pages of a reader PDF to the board, one at a time (light on memory).
+     * The message at the bottom has a STOP button; opening another board also stops it.
+     */
+    fun pagesToBoard(context: Context, doc: ViewerDoc, pages: List<Int>) {
+        if (pages.isEmpty()) return
+        val app = context.applicationContext
+        val stop = java.util.concurrent.atomic.AtomicBoolean(false)
+        val stopIt: () -> Unit = { stop.set(true) }
+        val epoch = DataManager.boardEpoch
+        val total = pages.size
+        DataManager.setMode(DataManager.MODE_BOARD)
+        DataManager.setStatus("Adding page 1 of $total…", stopIt)
+        Storage.io.execute {
+            var added = 0
+            try {
+                PdfRenderer(ParcelFileDescriptor.open(Storage.pdfFile(doc.docId), ParcelFileDescriptor.MODE_READ_ONLY)).use { r ->
+                    for ((k, page) in pages.withIndex()) {
+                        if (stop.get()) break
+                        main.post { if (!stop.get()) DataManager.setStatus("Adding page ${k + 1} of $total…", stopIt) }
+                        if (page !in 0 until r.pageCount) continue
+                        val bmp = try {
+                            r.openPage(page).use { PdfHelper.renderPage(it, BOARD_PDF_LONG_SIDE) }
+                        } catch (oom: OutOfMemoryError) {
+                            Log.w(TAG, "Out of memory on page $page", oom)
+                            break
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Page $page failed", e)
+                            continue
+                        }
+                        val image = ImageLoader.store(bmp)
+                        added++
+                        main.post {
+                            if (DataManager.boardEpoch == epoch) DataManager.addToBoard(image) else stop.set(true)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Pages to board failed", e)
+                toast(app, "Could not open that PDF")
+            }
+            main.post {
+                DataManager.setStatus(null)
+                if (added > 0) DataManager.requestFit()
+            }
+            toast(app, if (stop.get()) "Stopped · ${plural(added, "page")} added" else "Added ${plural(added, "page")} to the board")
         }
     }
 
@@ -200,7 +287,7 @@ object Importer {
         toast(app, "Loaded ${plural(count, "page")} into practice")
     }
 
-    private fun pdfToViewer(app: Context, pfd: ParcelFileDescriptor, name: String) {
+    private fun pdfToViewer(app: Context, pfd: ParcelFileDescriptor, name: String, choosePages: Boolean = false) {
         status("Copying PDF…")
         val docId = Storage.newId()
         val file = Storage.pdfFile(docId)
@@ -215,54 +302,7 @@ object Importer {
             return
         }
         val doc = ViewerDoc(docId, name, aspects)
-        main.post { DataManager.openDoc(doc) }
-    }
-
-    private fun pdfToBoard(app: Context, pfd: ParcelFileDescriptor) {
-        status("Copying PDF…")
-        val tmp = Storage.tempFile()
-        try {
-            if (!copy(pfd, tmp)) {
-                toast(app, "Could not read that PDF")
-                return
-            }
-            PdfRenderer(ParcelFileDescriptor.open(tmp, ParcelFileDescriptor.MODE_READ_ONLY)).use { renderer ->
-                val total = renderer.pageCount
-                val count = minOf(total, BOARD_PDF_MAX_PAGES)
-                var added = 0
-                for (i in 0 until count) {
-                    status("Adding PDF page ${i + 1} of $count…")
-                    val bmp = try {
-                        renderer.openPage(i).use { PdfHelper.renderPage(it, BOARD_PDF_LONG_SIDE) }
-                    } catch (oom: OutOfMemoryError) {
-                        Log.w(TAG, "Out of memory on page $i", oom)
-                        break
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Page $i failed", e)
-                        continue
-                    }
-                    val image = ImageLoader.store(bmp)
-                    val first = added == 0
-                    added++
-                    main.post {
-                        if (first) DataManager.setMode(DataManager.MODE_BOARD)
-                        DataManager.addToBoard(image)
-                    }
-                }
-                main.post { DataManager.requestFit() }
-                toast(
-                    app, if (total > count) "Added the first $count of $total pages. Open it in Practice to flip through every page."
-                    else "Added ${plural(added, "page")} to the board"
-                )
-            }
-        } catch (e: SecurityException) {
-            toast(app, "This PDF is password protected")
-        } catch (e: Exception) {
-            Log.w(TAG, "PDF import failed", e)
-            toast(app, "Could not open this PDF")
-        } finally {
-            tmp.delete()
-        }
+        main.post { if (choosePages) DataManager.choosePages(doc) else DataManager.openDoc(doc) }
     }
 
     // ------------------------------------------------------------------ Helpers

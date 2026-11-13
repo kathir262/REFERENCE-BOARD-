@@ -8,6 +8,8 @@ import json
 import math
 import os
 import random
+import time
+import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -25,10 +27,15 @@ INTERVALS = (30, 45, 60, 120, 180, 300, 600)
 _ids = itertools.count(1)
 
 
+NOTE_WIDTH = 320.0      # width of a new note, in board units
+NOTE_FONT = 22.0        # note text size at scale 1, in board units
+NOTE_PAD = 16.0
+
+
 @dataclass(eq=False)
 class BoardItem:
-    image: str          # file name inside board/img
-    w: int              # pixel size of the stored image
+    image: str          # file name inside board/img ("" for a note)
+    w: int              # pixel size of the stored image (for a note: its box size at scale 1)
     h: int
     cx: float = 0.0     # centre on the board
     cy: float = 0.0
@@ -37,14 +44,34 @@ class BoardItem:
     flip: bool = False
     gray: bool = False
     id: int = field(default_factory=lambda: next(_ids))
+    crop: tuple = None  # (x, y, w, h) of the picture that shows, in image pixels; None = all of it
+    opacity: float = 1.0
+    locked: bool = False
+    grid: int = 0       # 0 = no grid, otherwise an N x N grid over the picture
+    values: int = 0     # 0 = off, otherwise the picture in that many grey steps
+    blur: bool = False  # "squint": blurred, to judge the big shapes
+    note: str = ""      # a text note instead of a picture
+
+    @property
+    def is_note(self) -> bool:
+        return not self.image
+
+    @property
+    def cw(self) -> float:
+        """Width of the part that shows (cropped), before rotation, in image pixels."""
+        return self.crop[2] if self.crop else self.w
+
+    @property
+    def ch(self) -> float:
+        return self.crop[3] if self.crop else self.h
 
     @property
     def ew(self) -> float:
-        return (self.h if self.rot % 2 else self.w) * self.scale
+        return (self.ch if self.rot % 2 else self.cw) * self.scale
 
     @property
     def eh(self) -> float:
-        return (self.w if self.rot % 2 else self.h) * self.scale
+        return (self.cw if self.rot % 2 else self.ch) * self.scale
 
     def bounds(self) -> QRectF:
         ew, eh = self.ew, self.eh
@@ -55,23 +82,71 @@ class BoardItem:
         self.cy = top + self.eh / 2
 
     def fit_new(self):
-        self.scale = NEW_ITEM_SIDE / max(self.w, self.h, 1)
+        self.scale = 1.0 if self.is_note else NEW_ITEM_SIDE / max(self.w, self.h, 1)
 
     def reset(self):
         self.rot, self.flip, self.gray = 0, False, False
+        self.values, self.blur, self.opacity, self.grid = 0, False, 1.0, 0
         self.fit_new()
 
     def copy(self) -> "BoardItem":
-        return BoardItem(self.image, self.w, self.h, self.cx, self.cy, self.scale, self.rot, self.flip, self.gray)
+        """A new item that looks the same (new id)."""
+        d = dataclasses.replace(self)
+        d.id = next(_ids)
+        return d
 
     def to_json(self) -> dict:
-        return {"img": self.image, "w": self.w, "h": self.h, "cx": round(self.cx, 2), "cy": round(self.cy, 2),
-                "s": round(self.scale, 5), "rot": self.rot, "flip": self.flip, "gray": self.gray}
+        d = {"img": self.image, "w": self.w, "h": self.h, "cx": round(self.cx, 2), "cy": round(self.cy, 2),
+             "s": round(self.scale, 5), "rot": self.rot, "flip": self.flip, "gray": self.gray}
+        if self.crop:
+            d["crop"] = [round(v, 1) for v in self.crop]
+        if self.opacity < 1:
+            d["opacity"] = round(self.opacity, 2)
+        if self.locked:
+            d["locked"] = True
+        if self.grid:
+            d["grid"] = self.grid
+        if self.values:
+            d["values"] = self.values
+        if self.blur:
+            d["blur"] = True
+        if self.note:
+            d["note"] = self.note
+        return d
 
     @staticmethod
     def from_json(d: dict) -> "BoardItem":
-        return BoardItem(str(d["img"]), int(d["w"]), int(d["h"]), float(d.get("cx", 0)), float(d.get("cy", 0)),
-                         float(d.get("s", 1)), int(d.get("rot", 0)) % 4, bool(d.get("flip")), bool(d.get("gray")))
+        it = BoardItem(str(d.get("img") or ""), int(d["w"]), int(d["h"]), float(d.get("cx", 0)), float(d.get("cy", 0)),
+                       float(d.get("s", 1)), int(d.get("rot", 0)) % 4, bool(d.get("flip")), bool(d.get("gray")))
+        crop = d.get("crop")
+        if isinstance(crop, list) and len(crop) == 4 and crop[2] > 0 and crop[3] > 0:
+            it.crop = tuple(float(v) for v in crop)
+        it.opacity = max(0.1, min(1.0, float(d.get("opacity", 1))))
+        it.locked = bool(d.get("locked"))
+        it.grid = max(0, min(12, int(d.get("grid", 0))))
+        it.values = int(d.get("values", 0)) if int(d.get("values", 0)) in (0, 2, 3, 4, 5) else 0
+        it.blur = bool(d.get("blur"))
+        it.note = str(d.get("note") or "")
+        return it
+
+
+def note_item(text: str, cx: float, cy: float) -> BoardItem:
+    it = BoardItem("", round(NOTE_WIDTH), 100, cx, cy, 1.0, note=text)
+    size_note(it)
+    return it
+
+
+def size_note(it: BoardItem):
+    """Sets a note's height to fit its text (width stays)."""
+    from PySide6.QtGui import QFont, QFontMetricsF
+    f = QFont("Segoe UI")
+    f.setPixelSize(round(NOTE_FONT))
+    fm = QFontMetricsF(f)
+    inner = it.w - 2 * NOTE_PAD
+    lines = 0
+    for para in (it.note or " ").split("\n"):
+        lines += max(1, math.ceil(fm.horizontalAdvance(para or " ") / max(1.0, inner * 0.97)))
+    it.h = round(lines * fm.lineSpacing() + 2 * NOTE_PAD)
 
 
 @dataclass(eq=False)
@@ -100,19 +175,27 @@ class Doc:
     page: int = 0          # reading position: page index …
     offset: float = 0.0    # … and how far down that page (0..1)
     zoom: float = 1.0      # 1 = the page width fits the window
+    spread: bool = False   # two pages side by side
+    bookmarks: list = field(default_factory=list)   # page indexes
 
     @property
     def key(self) -> str:
         return os.path.normcase(os.path.abspath(self.path))
 
     def to_json(self) -> dict:
-        return {"path": self.path, "title": self.title, "pages": self.pages, "page": self.page,
-                "offset": round(self.offset, 4), "zoom": round(self.zoom, 4)}
+        d = {"path": self.path, "title": self.title, "pages": self.pages, "page": self.page,
+             "offset": round(self.offset, 4), "zoom": round(self.zoom, 4)}
+        if self.spread:
+            d["spread"] = True
+        if self.bookmarks:
+            d["bm"] = sorted(set(self.bookmarks))
+        return d
 
     @staticmethod
     def from_json(d: dict) -> "Doc":
         return Doc(str(d["path"]), str(d.get("title") or Path(d["path"]).stem), int(d.get("pages", 0)),
-                   int(d.get("page", 0)), float(d.get("offset", 0)), float(d.get("zoom", 1)))
+                   int(d.get("page", 0)), float(d.get("offset", 0)), float(d.get("zoom", 1)),
+                   bool(d.get("spread")), [int(x) for x in d.get("bm", []) if isinstance(x, int)])
 
 
 def doc_title(path: str) -> str:
@@ -151,7 +234,12 @@ class State(QObject):
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(800)
         self._save_timer.timeout.connect(self.save_now)
+        self._undo: list = []          # board as it was before each change
+        self._redo: list = []
+        self._merge_key = None
+        self._merge_until = 0.0
         self.load()
+        self._shot = self._take()
 
     # ------------------------------------------------------------------ messages
 
@@ -178,6 +266,7 @@ class State(QObject):
             if place:
                 self._place(item)
             self.items.append(item)
+        self._record("add")
         self._set_dirty(True)
         self.boardChanged.emit()
         self.itemsAdded.emit(list(new))
@@ -227,11 +316,61 @@ class State(QObject):
             row_h = max(row_h, it.eh)
         self.edited()
 
-    def edited(self):
-        """Call after any finished change to the board: redraws and saves."""
+    def edited(self, merge: str = None):
+        """Call after any finished change to the board: redraws, saves and can be undone."""
+        self._record(merge)
         self._set_dirty(True)
         self.boardChanged.emit()
         self.schedule_save()
+
+    # ------------------------------------------------------------------ undo / redo
+
+    def _take(self) -> list:
+        return [dataclasses.replace(it) for it in self.items]
+
+    def _record(self, merge: str = None):
+        """Remembers the board as it was before the change just made."""
+        now = time.monotonic()
+        if not (merge and merge == self._merge_key and now < self._merge_until):
+            self._undo.append(self._shot)
+            del self._undo[:-100]
+        self._merge_key, self._merge_until = merge, now + 2.0
+        self._redo.clear()
+        self._shot = self._take()
+
+    @property
+    def can_undo(self) -> bool:
+        return bool(self._undo)
+
+    @property
+    def can_redo(self) -> bool:
+        return bool(self._redo)
+
+    def _restore(self, snap: list):
+        self.items[:] = [dataclasses.replace(it) for it in snap]   # same list: running imports keep their board
+        self._shot = self._take()
+        self._merge_key = None
+        self._set_dirty(True)
+        self.boardChanged.emit()
+        self.schedule_save()
+
+    def undo(self):
+        if not self._undo:
+            return self.notify("Nothing to undo")
+        self._redo.append(self._take())
+        self._restore(self._undo.pop())
+
+    def redo(self):
+        if not self._redo:
+            return self.notify("Nothing to redo")
+        self._undo.append(self._take())
+        self._restore(self._redo.pop())
+
+    def _forget_history(self):
+        self._undo.clear()
+        self._redo.clear()
+        self._merge_key = None
+        self._shot = self._take()
 
     def moved(self):
         """Call while dragging or resizing: redraws without saving."""
@@ -303,6 +442,7 @@ class State(QObject):
     def replace_board(self, items: list, path=None, view=None, suggested: str = ""):
         """Shows a different board (opened from a file, or a new empty one)."""
         self.items = list(items)
+        self._forget_history()
         self.board_path = path
         self.board_suggested = suggested
         self.board_dirty = False
@@ -468,7 +608,7 @@ class State(QObject):
                 it = BoardItem.from_json(d)
             except (KeyError, ValueError, TypeError):
                 continue
-            if (img_dir / it.image).exists():
+            if it.is_note or (img_dir / it.image).exists():
                 self.items.append(it)
         for v in data.get("practice", []):
             try:
@@ -496,7 +636,7 @@ class State(QObject):
 
     def delete_unused_images(self):
         """Removes stored pictures that nothing uses any more (runs at start-up, after undo is no longer possible)."""
-        used = {it.image for it in self.items} | {p.ref for p in self.practice if p.kind == "img"}
+        used = {it.image for it in self.items if it.image} | {p.ref for p in self.practice if p.kind == "img"}
         keep = used | {preview_name(n) for n in used}
         try:
             for f in paths.IMG.iterdir():

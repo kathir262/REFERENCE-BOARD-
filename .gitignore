@@ -22,3 +22,6 @@ android/**/*.iml
 android/keystore.properties
 android/*.jks
 android/app/*.jks
+
+# Microsoft Store identity (from Partner Center)
+tools/windows/store.json

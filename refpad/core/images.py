@@ -8,8 +8,8 @@ import os
 import uuid
 from collections import OrderedDict
 
-from PySide6.QtCore import QObject, QThreadPool, Qt, Signal
-from PySide6.QtGui import QImage, QImageReader
+from PySide6.QtCore import QObject, QRect, QThreadPool, Qt, Signal
+from PySide6.QtGui import QImage, QImageReader, QTransform
 
 from refpad import paths
 from refpad.core.store import preview_name
@@ -92,6 +92,62 @@ def read_image(path: str, max_side: int = MAX_SIDE):
 
 def grayscale(img: QImage) -> QImage:
     return normalize(img.convertToFormat(QImage.Format.Format_Grayscale8))
+
+
+def posterize(img: QImage, steps: int) -> QImage:
+    """The picture in `steps` grey values (a value study). Fast: one byte lookup per pixel."""
+    g = img.convertToFormat(QImage.Format.Format_Grayscale8)
+    lut = bytes(round(round(i / 255 * (steps - 1)) * 255 / (steps - 1)) for i in range(256))
+    data = bytes(g.constBits()).translate(lut)
+    out = QImage(data, g.width(), g.height(), g.bytesPerLine(), QImage.Format.Format_Grayscale8).copy()
+    return normalize(out)
+
+
+def squint(img: QImage) -> QImage:
+    """Blurred, like squinting at the subject: only the big shapes and values remain."""
+    w, h = img.width(), img.height()
+    k = max(w, h) / 28
+    small = img.scaled(max(2, round(w / k)), max(2, round(h / k)), Qt.AspectRatioMode.IgnoreAspectRatio,
+                       Qt.TransformationMode.SmoothTransformation)
+    mid = small.scaled(max(2, round(w / 4)), max(2, round(h / 4)), Qt.AspectRatioMode.IgnoreAspectRatio,
+                       Qt.TransformationMode.SmoothTransformation)
+    return normalize(mid.scaled(w, h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation))
+
+
+def crop_rect(src: QImage, item):
+    """The item's crop in `src` pixels (src may be the preview or the large copy), or None."""
+    if not getattr(item, "crop", None):
+        return None
+    k = src.width() / max(1, item.w)
+    x, y, w, h = item.crop
+    r = QRect(round(x * k), round(y * k), max(1, round(w * k)), max(1, round(h * k)))
+    return r.intersected(src.rect())
+
+
+def apply_look(img: QImage, gray=False, values=0, blur=False, flip=False, rot=0) -> QImage:
+    """Black & white, value steps, squint, then flip and rotation (in that order)."""
+    if values:
+        img = posterize(img, values)
+    elif gray:
+        img = grayscale(img)
+    if blur:
+        img = squint(img)
+    if rot or flip:
+        t = QTransform()
+        if flip:
+            t.scale(-1, 1)
+        t.rotate(90 * rot)
+        img = img.transformed(t)
+    return normalize(img)
+
+
+def item_picture(item, src: QImage, size=None) -> QImage:
+    """What a board item shows: cropped, scaled to `size` (w, h before rotation) and with its look applied."""
+    r = crop_rect(src, item)
+    img = src.copy(r) if r is not None else src
+    if size is not None:
+        img = img.scaled(size[0], size[1], Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    return apply_look(img, item.gray, item.values, item.blur, item.flip, item.rot)
 
 
 def store_image(img: QImage):

@@ -28,7 +28,10 @@ object Storage {
         val practice: List<Pose>,
         val practiceIndex: Int,
         val docs: List<ViewerDoc>,
-        val mode: Int
+        val mode: Int,
+        val boardUri: String?,
+        val boardName: String,
+        val boardDirty: Boolean
     )
 
     private val main = Handler(Looper.getMainLooper())
@@ -76,19 +79,29 @@ object Storage {
         io.execute { pdfFile(docId).delete() }
     }
 
-    fun encode(items: List<RefBoardItem>, practice: List<Pose>, practiceIndex: Int, docs: List<ViewerDoc>, mode: Int): String {
+    fun encode(
+        items: List<RefBoardItem>, practice: List<Pose>, practiceIndex: Int, docs: List<ViewerDoc>, mode: Int,
+        boardUri: String?, boardName: String, boardDirty: Boolean
+    ): String {
         val itemsJson = JSONArray()
         for (it in items) {
-            itemsJson.put(
-                JSONObject()
-                    .put("f", it.image.fileName)
-                    .put("x", it.x.toDouble())
-                    .put("y", it.y.toDouble())
-                    .put("s", it.scale.toDouble())
-                    .put("r", it.rotation)
-                    .put("fl", it.flipped)
-                    .put("g", it.grayscale)
-            )
+            val j = JSONObject()
+                .put("x", it.x.toDouble())
+                .put("y", it.y.toDouble())
+                .put("s", it.scale.toDouble())
+                .put("r", it.rotation)
+                .put("fl", it.flipped)
+                .put("g", it.grayscale)
+            val img = it.image
+            if (img != null) j.put("f", img.fileName)
+            else j.put("n", it.note).put("nw", it.noteW.toDouble()).put("nh", it.noteH.toDouble())
+            it.crop?.let { c -> j.put("c", JSONArray().put(c.left.toDouble()).put(c.top.toDouble()).put(c.right.toDouble()).put(c.bottom.toDouble())) }
+            if (it.opacity < 1f) j.put("o", it.opacity.toDouble())
+            if (it.locked) j.put("lk", true)
+            if (it.grid > 0) j.put("gd", it.grid)
+            if (it.values > 0) j.put("vs", it.values)
+            if (it.blur) j.put("bl", true)
+            itemsJson.put(j)
         }
         val practiceJson = JSONArray()
         for (p in practice) {
@@ -101,13 +114,14 @@ object Storage {
         for (d in docs) {
             val aspects = JSONArray()
             for (a in d.aspectList()) aspects.put((a * 10000).toInt() / 10000.0)
-            docsJson.put(
-                JSONObject()
-                    .put("d", d.docId)
-                    .put("t", d.title)
-                    .put("a", aspects)
-                    .put("p", d.position.toDouble())
-            )
+            val j = JSONObject()
+                .put("d", d.docId)
+                .put("t", d.title)
+                .put("a", aspects)
+                .put("p", d.position.toDouble())
+            if (d.spread) j.put("sp", true)
+            if (d.bookmarks.isNotEmpty()) j.put("bm", JSONArray().apply { for (b in d.bookmarks) put(b) })
+            docsJson.put(j)
         }
         return JSONObject()
             .put("v", 2)
@@ -116,6 +130,9 @@ object Storage {
             .put("pi", practiceIndex)
             .put("docs", docsJson)
             .put("m", mode)
+            .put("bu", boardUri ?: "")
+            .put("bn", boardName)
+            .put("bd", boardDirty)
             .toString()
     }
 
@@ -174,19 +191,28 @@ object Storage {
         val itemsJson = json.optJSONArray("items") ?: JSONArray()
         for (i in 0 until itemsJson.length()) {
             val j = itemsJson.optJSONObject(i) ?: continue
-            val img = image(j.optString("f")) ?: continue
-            items.add(
-                RefBoardItem(
-                    image = img,
-                    x = j.optDouble("x", 0.0).toFloat(),
-                    y = j.optDouble("y", 0.0).toFloat(),
-                    scale = j.optDouble("s", RefBoardItem.defaultScaleFor(img).toDouble()).toFloat()
-                        .coerceIn(RefBoardItem.MIN_SCALE, RefBoardItem.MAX_SCALE),
-                    rotation = ((j.optInt("r", 0) % 360 + 360) % 360 / 90) * 90,
-                    flipped = j.optBoolean("fl", false),
-                    grayscale = j.optBoolean("g", false)
-                )
+            val isNote = !j.has("f") && j.has("n")
+            val img = if (isNote) null else image(j.optString("f")) ?: continue
+            val item = RefBoardItem(
+                image = img,
+                x = j.optDouble("x", 0.0).toFloat(),
+                y = j.optDouble("y", 0.0).toFloat(),
+                scale = j.optDouble("s", img?.let { RefBoardItem.defaultScaleFor(it).toDouble() } ?: 1.0).toFloat()
+                    .coerceIn(RefBoardItem.MIN_SCALE, RefBoardItem.MAX_SCALE),
+                rotation = if (isNote) 0 else ((j.optInt("r", 0) % 360 + 360) % 360 / 90) * 90,
+                flipped = !isNote && j.optBoolean("fl", false),
+                grayscale = j.optBoolean("g", false),
+                crop = if (img == null) null else readCrop(j.optJSONArray("c"), img),
+                opacity = j.optDouble("o", 1.0).toFloat().coerceIn(0.1f, 1f),
+                locked = j.optBoolean("lk", false),
+                grid = j.optInt("gd", 0).coerceIn(0, 12),
+                values = j.optInt("vs", 0).takeIf { it in 2..5 } ?: 0,
+                blur = j.optBoolean("bl", false),
+                note = if (isNote) j.optString("n") else "",
+                noteW = j.optDouble("nw", RefBoardItem.NOTE_WIDTH.toDouble()).toFloat().coerceAtLeast(40f),
+                noteH = j.optDouble("nh", 100.0).toFloat().coerceAtLeast(20f)
             )
+            items.add(item)
         }
 
         val poses = ArrayList<Pose>()
@@ -212,11 +238,26 @@ object Storage {
             val a = j.optJSONArray("a") ?: continue
             val aspects = FloatArray(a.length()) { a.optDouble(it, 1.414).toFloat() }
             if (aspects.isEmpty()) continue
-            docs.add(ViewerDoc(id, j.optString("t", "PDF"), aspects, j.optDouble("p", 0.0).toFloat()))
+            val marks = java.util.TreeSet<Int>()
+            j.optJSONArray("bm")?.let { b -> for (k in 0 until b.length()) b.optInt(k, -1).takeIf { it in aspects.indices }?.let { marks.add(it) } }
+            docs.add(ViewerDoc(id, j.optString("t", "PDF"), aspects, j.optDouble("p", 0.0).toFloat(), j.optBoolean("sp", false), marks))
         }
 
         deleteUnused(images.keys, pdfExists.filterValues { it }.keys)
-        return State(items, poses, json.optInt("pi", 0), docs, json.optInt("m", DataManager.MODE_BOARD))
+        return State(
+            items, poses, json.optInt("pi", 0), docs, json.optInt("m", DataManager.MODE_BOARD),
+            json.optString("bu").ifEmpty { null }, json.optString("bn", ""), json.optBoolean("bd", false)
+        )
+    }
+
+    /** A saved crop [left, top, right, bottom] in picture pixels, or null if missing or not usable. */
+    private fun readCrop(a: JSONArray?, img: RefImage): android.graphics.RectF? {
+        if (a == null || a.length() != 4) return null
+        val r = android.graphics.RectF(
+            a.optDouble(0).toFloat(), a.optDouble(1).toFloat(), a.optDouble(2).toFloat(), a.optDouble(3).toFloat()
+        )
+        r.intersect(0f, 0f, img.width.toFloat(), img.height.toFloat())
+        return r.takeIf { it.width() >= 1f && it.height() >= 1f }
     }
 
     /** Removes saved files the board no longer uses (only done at startup, before any new import). */

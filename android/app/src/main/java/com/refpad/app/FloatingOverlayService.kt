@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
@@ -40,6 +41,12 @@ class FloatingOverlayService : Service(), BoardController.Host {
             private set
 
         private var instance: FloatingOverlayService? = null
+
+        /** A board file was picked while the floating window is open. */
+        fun openBoard(context: Context, uri: android.net.Uri) {
+            val c = instance?.controller
+            if (c != null) c.openBoard(uri) else BoardFiles.load(context, uri)
+        }
 
         /** Called by [PickerActivity] when the picker closes, to bring the window back. */
         fun onPickerClosed() {
@@ -104,6 +111,7 @@ class FloatingOverlayService : Service(), BoardController.Host {
     override fun onDestroy() {
         isRunning = false
         if (instance === this) instance = null
+        BoardFiles.saveIfNeeded(this)
         controller?.detach()
         if (shownToTimer) PracticeTimer.hostHidden()
         overlayView?.let {
@@ -167,6 +175,13 @@ class FloatingOverlayService : Service(), BoardController.Host {
         c.attach()
         PracticeTimer.hostShown()
         shownToTimer = true
+        // "Float this picture": open zoomed to it.
+        val focus = DataManager.floatFocusId
+        if (focus != 0L) {
+            DataManager.floatFocusId = 0L
+            DataManager.setMode(DataManager.MODE_BOARD)
+            c.canvas.fitItemWhenReady(focus)
+        }
     }
 
     private fun setupMoveAndResize(view: View) {
@@ -296,13 +311,27 @@ class FloatingOverlayService : Service(), BoardController.Host {
 
     override fun pickPdf(target: Importer.Target) = launchPicker(PickerActivity.PICK_PDF, target)
 
-    private fun launchPicker(action: String, target: Importer.Target) {
+    override fun openBoardFile() = launchPicker(PickerActivity.OPEN_BOARD, Importer.Target.BOARD)
+
+    override fun createBoardFile(suggestedName: String) =
+        launchPicker(PickerActivity.CREATE_BOARD, Importer.Target.BOARD, suggestedName)
+
+    override fun askText(title: String, hint: String, initial: String, multiLine: Boolean, onOk: (String) -> Unit) =
+        Pickers.askText(this, overlay = true, title = title, hint = hint, initial = initial, multiLine = multiLine, onOk = onOk)
+
+    override fun createExportFile(suggestedName: String) =
+        launchPicker(PickerActivity.EXPORT_PNG, Importer.Target.BOARD, suggestedName)
+
+    override fun showHistory() = HistoryDialog.show(this, overlay = true)
+
+    private fun launchPicker(action: String, target: Importer.Target, name: String? = null) {
         try {
             startActivity(
                 Intent(this, PickerActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     .putExtra(PickerActivity.EXTRA_ACTION, action)
                     .putExtra(PickerActivity.EXTRA_TARGET, target.name)
+                    .putExtra(PickerActivity.EXTRA_NAME, name)
             )
             // Floating windows sit above every app, including the picker; shrink to the bubble meanwhile.
             if (!minimized) {

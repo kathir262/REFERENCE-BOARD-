@@ -44,6 +44,23 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/pdf" />
             </intent-filter>
+            <!-- .refpad board files opened from Files, a cloud app or a chat (Android has no type for them,
+                 so they arrive as generic files; RefPad checks the file itself). -->
+            <intent-filter android:label="@string/open_board">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-refpad" />
+            </intent-filter>
+            <intent-filter android:label="@string/open_board">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-refpad" />
+            </intent-filter>
         </activity>
 
         <activity

@@ -51,12 +51,12 @@ def write_board(path: str, items_json: list, view):
     tmp = target.with_name(f"{target.name}.{os.urandom(3).hex()}.saving")   # unique: saves may overlap
     names = []
     for d in items_json:
-        if d["img"] not in names:
+        if d.get("img") and d["img"] not in names:
             names.append(d["img"])
     try:
         with zipfile.ZipFile(tmp, "w") as z:
             board = {"app": "RefPad", "format": FORMAT, "view": view,
-                     "items": [dict(d, img="images/" + d["img"]) for d in items_json]}
+                     "items": [dict(d, img="images/" + d["img"]) if d.get("img") else d for d in items_json]}
             z.writestr("board.json", json.dumps(board, indent=1), compress_type=zipfile.ZIP_DEFLATED)
             for name in names:
                 for n in (name, preview_name(name)):
@@ -127,6 +127,9 @@ def _read_zip(path: str) -> Loaded:
         items, missing, done = [], 0, {}
         for d in board.get("items", []):
             arc = d.get("img", "")
+            if not arc and d.get("note") is not None:   # a text note
+                items.append(BoardItem.from_json(dict(d, img="")))
+                continue
             if arc not in files:
                 missing += 1
                 continue

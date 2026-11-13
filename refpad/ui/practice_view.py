@@ -60,6 +60,8 @@ class PracticeView(QWidget):
         engine.pageReady.connect(self._on_page)
         engine.infoReady.connect(lambda _k: self._on_source_changed())
         timer.tick.connect(self._update_progress)
+        timer.phaseChanged.connect(self.update)
+        self._peek = False
 
     # ------------------------------------------------------------------ layout
 
@@ -117,7 +119,7 @@ class PracticeView(QWidget):
 
     def paintEvent(self, e):
         p = QPainter(self)
-        p.fillRect(self.rect(), theme.color(theme.BG))
+        p.fillRect(self.rect(), theme.board_colors()[0])
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         if not self.state.practice:
             return
@@ -129,6 +131,8 @@ class PracticeView(QWidget):
             self._draw_pose(p, self._pose, dpr, current=True, x_shift=self._dir * (w - off))
         else:
             self._draw_pose(p, self._pose, dpr, current=True, x_shift=self._swipe)
+        if self.timer.hidden and not self._peek:
+            self._paint_cover(p)
         self._paint_progress(p)
         self._request_pages(dpr)
 
@@ -166,6 +170,23 @@ class PracticeView(QWidget):
         p.restore()
         if current and self._t >= 1.0 and not self._idle.isActive():
             self._idle.start()
+
+    def _paint_cover(self, p):
+        """Memory mode: the pose is hidden while you draw it from memory."""
+        box = self._box()
+        p.fillRect(QRectF(0, self.pad_top, self.width(), self.height() - self.pad_top), theme.board_colors()[0])
+        f = p.font()
+        f.setPixelSize(26)
+        f.setBold(True)
+        p.setFont(f)
+        p.setPen(theme.color(theme.TEXT))
+        p.drawText(box.adjusted(0, 0, 0, -40), Qt.AlignmentFlag.AlignCenter, "Draw it from memory")
+        f.setPixelSize(14)
+        f.setBold(False)
+        p.setFont(f)
+        p.setPen(theme.color(theme.TEXT_2))
+        p.drawText(box.adjusted(0, 60, 0, 0), Qt.AlignmentFlag.AlignCenter,
+                   "Hold the mouse button to peek · the next pose comes when the time is up")
 
     def _paint_progress(self, p):
         y = self.pad_top
@@ -303,6 +324,10 @@ class PracticeView(QWidget):
             self.contextRequested.emit(e.globalPosition())
             return
         if e.button() in (Qt.MouseButton.LeftButton, Qt.MouseButton.MiddleButton):
+            if self.timer.hidden:
+                self._peek = True    # memory mode: peek while the button is held
+                self.update()
+                return
             self._drag = {"start": e.position(), "last": e.position()}
 
     def mouseMoveEvent(self, e):
@@ -319,12 +344,16 @@ class PracticeView(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, e):
+        if self._peek:
+            self._peek = False
+            self.update()
+            return
         d, self._drag = self._drag, None
         self.unsetCursor()
         if d is None:
             return
         if self._zoom <= 1.0 and abs(self._swipe) > min(120, self.width() * 0.12):
-            self.state.prev_pose() if self._swipe > 0 else self.state.next_pose()
+            self.state.prev_pose() if self._swipe > 0 else self.timer.advance()
             return
         if self._swipe:
             self._swipe = 0.0

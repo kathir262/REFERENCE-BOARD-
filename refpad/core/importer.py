@@ -7,7 +7,7 @@ import os
 import re
 from pathlib import Path
 
-from PySide6.QtGui import QGuiApplication, QTransform
+from PySide6.QtGui import QGuiApplication
 
 from refpad.core import images, pdf
 from refpad.core.store import PRACTICE, PDF, BoardItem, Pose
@@ -56,20 +56,14 @@ def scan_folder(folder: str, limit: int):
 
 
 def item_image(item: BoardItem):
-    """The board image with its flip, rotation and black & white applied (for copying)."""
+    """The board image as it looks on the board: crop, flip, rotation, black & white, values, squint."""
     from refpad import paths
+    if item.is_note:
+        return None
     img = images.cache.large(item.image) or images.read_image(str(paths.IMG / item.image))
     if img is None:
         return None
-    if item.gray:
-        img = images.grayscale(img)
-    if item.rot or item.flip:
-        t = QTransform()
-        if item.flip:
-            t.scale(-1, 1)
-        t.rotate(90 * item.rot)
-        img = img.transformed(t)
-    return img
+    return images.item_picture(item, img)
 
 
 class Importer:
@@ -195,6 +189,26 @@ class Importer:
 
         self.engine.render_once(path, page, BOARD_PAGE_SIDE, rendered)
 
+    def region_to_board(self, path: str, page: int, frac):
+        """A snipped part of a PDF page, as a sharp picture on the board."""
+        st = self.state
+        st.busy("Adding the snip to the board…")
+
+        def stored(v):
+            if isinstance(v, Exception):
+                return st.notify(f"Couldn't add the snip: {v}")
+            item = BoardItem(*v)
+            item.fit_new()
+            st.add_items([item])
+            st.notify(f"Snip from page {page + 1} added to the board")
+
+        def rendered(img):
+            if img is None:
+                return st.notify("Couldn't render that part of the page")
+            images.run_async(lambda: images.store_image(img), stored)
+
+        self.engine.render_region(path, page, frac, BOARD_PAGE_SIDE, rendered)
+
     # ------------------------------------------------------------------ practice
 
     def images_to_practice(self, paths):
@@ -218,7 +232,7 @@ class Importer:
         images.run_async(lambda: [images.store_image(i) for i in imgs], done)
 
     def board_to_practice(self, items):
-        poses = [Pose("img", it.image) for it in items]
+        poses = [Pose("img", it.image) for it in items if not it.is_note]
         if poses:
             self.state.add_practice(poses, jump=True)
             self.state.set_mode(PRACTICE)
@@ -258,6 +272,41 @@ class Importer:
         self.engine.forget(path)
         self.state.open_doc(os.path.abspath(path))
         self.state.set_mode(PDF)
+
+    # ------------------------------------------------------------------ pictures from the web
+
+    def download_images(self, urls, to_practice: bool = False):
+        """Pictures dragged from a web page: downloads them (only those addresses, nothing else is sent)."""
+        urls = [u for u in urls if u.lower().startswith(("http://", "https://"))][:20]
+        if not urls:
+            return
+        st = self.state
+        st.busy(f"Downloading {plural(len(urls), 'picture')}…")
+
+        def work():
+            import urllib.request
+            from PySide6.QtGui import QImage
+            got = []
+            for u in urls:
+                try:
+                    req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0 (RefPad)"})
+                    with urllib.request.urlopen(req, timeout=20) as resp:
+                        data = resp.read(40 * 1024 * 1024 + 1)
+                    if len(data) > 40 * 1024 * 1024:
+                        continue
+                    img = QImage.fromData(data)
+                    if not img.isNull():
+                        got.append(images.normalize(images.fit(img, images.MAX_SIDE)))
+                except Exception:
+                    continue
+            return got
+
+        def done(result):
+            if isinstance(result, Exception) or not result:
+                return st.notify("Couldn't download that picture. Save it first, then drop the file.")
+            (self.qimages_to_practice if to_practice else self.qimages_to_board)(result)
+
+        images.run_async(work, done)
 
     # ------------------------------------------------------------------ clipboard
 
@@ -301,6 +350,10 @@ class Importer:
     def copy_items(self, items) -> bool:
         if not items:
             return False
+        if items[-1].is_note:
+            QGuiApplication.clipboard().setText(items[-1].note)
+            self.state.notify("Note copied")
+            return True
         img = item_image(items[-1])
         if img is None:
             return False
