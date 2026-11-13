@@ -123,10 +123,10 @@ The in-app updater looks at this repository's **GitHub Releases**. It installs a
 and `X.Y.Z` is newer than the installed version. Drafts and pre-releases are ignored.
 
 To ship a new version:
-1. Raise `__version__` in `refpad/__init__.py` (for example `1.2.0` → `1.2.1`).
+1. Raise `__version__` in `refpad/__init__.py` (for example `1.3.0` → `1.3.1`) and write the notes in `release-notes/1.3.1.md` (they are shown in the update window).
 2. Run `py -3.12 tools/build_windows.py`.
-3. On GitHub: **Releases → Draft a new release**, tag `v1.2.1` (a new tag each time), add notes (they are shown in the update dialog), and attach the **three** files from `dist/`: the Setup `.exe`, the `.zip` and the `.zip.sha256`.
-4. Publish. Installed copies offer the update within a day, or straight away via *⋮ → Check for updates*.
+3. Commit and push, then run `py -3.12 tools/publish_release.py`. It creates the release `v1.3.1` on GitHub and uploads the **three** files from `dist/`: the Setup `.exe`, the `.zip` and the `.zip.sha256`. It signs in with the same GitHub login `git push` uses.
+4. Installed copies offer the update within a day, or straight away via *⋮ → Check for updates*.
 
 How an update installs: RefPad downloads the zip over HTTPS from GitHub only, checks its size and SHA-256 checksum, unpacks it next to the installed folder, then closes. A small script swaps the folders and restarts RefPad; if the swap fails, the old version is put back. The board and settings live in `%LOCALAPPDATA%\RefPad`, outside the program folder, so updates never touch them. RefPad only updates itself when its folder contains nothing but RefPad's own files.
 
