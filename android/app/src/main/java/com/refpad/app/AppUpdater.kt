@@ -204,7 +204,7 @@ object AppUpdater {
         val notes = rel.notes.trim().take(1500).ifEmpty { "A new version of RefPad is ready." }
         val b = AlertDialog.Builder(ctx)
             .setTitle("RefPad ${rel.version} is available")
-            .setMessage("$notes\n\nYour board is kept.")
+            .setMessage(if (notes.contains("kept", ignoreCase = true)) notes else "$notes\n\nYour board is kept.")
             .setPositiveButton("Update") { _, _ -> download(activity, rel) }
             .setNegativeButton("Later", null)
         if (!manual) b.setNeutralButton("Skip this version") { _, _ ->
