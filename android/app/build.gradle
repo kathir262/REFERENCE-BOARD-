@@ -46,6 +46,26 @@ android {
         }
     }
 
+    buildFeatures {
+        buildConfig true
+    }
+
+    // Two versions of the app:
+    //   play   - for Google Play: no Internet permission, updates come from Play.
+    //   direct - the APK on the website / GitHub: checks GitHub for updates and installs them itself.
+    // (Google Play does not allow apps to update themselves, so the Play build never contains that.)
+    flavorDimensions = ["store"]
+    productFlavors {
+        play {
+            dimension "store"
+            buildConfigField "boolean", "SELF_UPDATE", "false"
+        }
+        direct {
+            dimension "store"
+            buildConfigField "boolean", "SELF_UPDATE", "true"
+        }
+    }
+
     buildTypes {
         release {
             signingConfig signingConfigs.release

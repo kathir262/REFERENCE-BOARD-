@@ -101,8 +101,8 @@ The build writes to `dist/`:
 ### Android
 ```bash
 cd android
-gradlew assembleRelease   # APK for testing
-gradlew bundleRelease     # AAB for Google Play
+gradlew assembleDirectRelease   # APK for the website (updates itself from GitHub)
+gradlew bundlePlayRelease       # AAB for Google Play (no Internet permission, updated by Play)
 ```
 
 ### Microsoft Store package

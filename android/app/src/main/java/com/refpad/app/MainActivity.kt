@@ -73,13 +73,14 @@ class MainActivity : Activity(), BoardController.Host {
         root.post { window.setBackgroundDrawable(null) }
 
         // Don't import a share twice when Android recreates the screen.
-        if (savedInstanceState == null) root.post { handleShare(intent) }
+        if (savedInstanceState == null) root.post { if (!AppUpdater.handleInstallStatus(this, intent)) handleShare(intent) }
         setupDrop(root)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (AppUpdater.handleInstallStatus(this, intent)) return
         handleShare(intent)
     }
 
@@ -87,6 +88,8 @@ class MainActivity : Activity(), BoardController.Host {
         super.onStart()
         controller.attach()
         PracticeTimer.hostShown()
+        // Website version only: a newer RefPad on GitHub is offered at most once a day.
+        window.decorView.postDelayed({ if (!isFinishing) AppUpdater.checkOnStart(this) }, 4000)
     }
 
     override fun onStop() {
@@ -218,12 +221,21 @@ class MainActivity : Activity(), BoardController.Host {
         return true
     }
 
-    override fun extraMenuItems() = listOf(
-        MenuCard.Item("Float over other apps", R.drawable.ic_float) { startFloating() },
-        MenuCard.Item("Privacy policy", R.drawable.ic_info) {
+    override fun extraMenuItems(): List<MenuCard.Item> {
+        val items = arrayListOf(MenuCard.Item("Float over other apps", R.drawable.ic_float) { startFloating() })
+        if (AppUpdater.isEnabled(this)) {
+            items += MenuCard.Item("Check for updates", R.drawable.ic_reset) { AppUpdater.checkNow(this) }
+            val auto = AppUpdater.autoCheck(this)
+            items += MenuCard.Item(if (auto) "Check for updates daily  ✓" else "Check for updates daily", R.drawable.ic_history) {
+                AppUpdater.setAutoCheck(this, !auto)
+                toast(if (auto) "RefPad won't check for updates by itself" else "RefPad checks for updates once a day")
+            }
+        }
+        items += MenuCard.Item("Privacy policy", R.drawable.ic_info) {
             startActivity(Intent(this, PrivacyActivity::class.java))
         }
-    )
+        return items
+    }
 
     override fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
 

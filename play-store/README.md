@@ -11,7 +11,7 @@ no accounts, no analytics and no Internet permission**.
 | `screenshots/phone-1-board.png` … `phone-3-pdf-reader.png` | Store listing → Phone screenshots (1440 × 2560, 9:16) |
 | `CREDITS.md` | Sources of the public-domain (CC0) artworks shown in the screenshots |
 | `../docs/privacy-policy.html` | Privacy policy page (must be hosted at a public URL, see step 2) |
-| `android/app/build/outputs/bundle/release/app-release.aab` | The file you upload (built with `gradlew bundleRelease`) |
+| `android/app/build/outputs/bundle/playRelease/app-play-release.aab` | The file you upload (built with `gradlew bundlePlayRelease`) |
 
 ---
 
@@ -53,13 +53,13 @@ The same policy text is also inside the app (menu ⋮ → **Privacy policy**).
 
 ```bash
 cd android
-gradlew bundleRelease
+gradlew bundlePlayRelease
 ```
 
-Upload `android/app/build/outputs/bundle/release/app-release.aab`. The build already:
+Upload `android/app/build/outputs/bundle/playRelease/app-play-release.aab`. The build already:
 - targets **Android 16 (API 36)**, which Google Play requires for new apps since 31 August 2026,
 - is optimised with R8 and includes a baseline profile (Play pre-compiles the app for smooth first launch),
-- is version **1.2.0 (versionCode 3)**. Increase `versionCode` in `android/app/build.gradle` for every upload.
+- is version **1.3.0 (versionCode 4)**. Increase `versionCode` in `android/app/build.gradle` for every upload.
 
 ## 4. Play Console answers
 
