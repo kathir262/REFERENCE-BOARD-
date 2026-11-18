@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import com.refpad.app.MenuCard.Header
@@ -46,6 +47,8 @@ class BoardController(
         fun createExportFile(suggestedName: String)
         /** Shows the practice history (poses, minutes, streak). */
         fun showHistory()
+        /** Full screen only: the bottom toolbar was minimised to a circle (or brought back), so the screen can use the space. */
+        fun toolbarCollapsedChanged(collapsed: Boolean) {}
         /** Full screen only: open the floating window zoomed to this picture. */
         val canFloat: Boolean get() = false
         fun floatItem(item: RefBoardItem) {}
@@ -156,6 +159,201 @@ class BoardController(
         setupAdaptiveToolbars() // after the fields above are ready
     }
 
+    // ---------------------------------------------------------------- Minimising the toolbar to a circle (full screen)
+
+    private val toolbarView: View? = root.findViewById(R.id.toolbar)
+    private val toolbarBubble: View? = root.findViewById(R.id.toolbar_bubble)
+    private val prefs = root.context.getSharedPreferences("refpad", android.content.Context.MODE_PRIVATE)
+    var toolbarCollapsed = false
+        private set
+
+    init {
+        if (toolbarBubble != null && toolbarView != null) {
+            for (id in intArrayOf(R.id.btn_board_hide, R.id.btn_practice_hide, R.id.btn_pdf_hide)) {
+                root.findViewById<View>(id)?.setOnClickListener { setToolbarCollapsed(true) }
+            }
+            toolbarBubble.setOnClickListener { setToolbarCollapsed(false) }
+            toolbarBubble.setOnLongClickListener {
+                it.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                showToolsGrid(it)
+                true
+            }
+            if (prefs.getBoolean("toolbar_hidden", false)) root.post { setToolbarCollapsed(true) }
+        }
+    }
+
+    fun setToolbarCollapsed(collapsed: Boolean) {
+        val bar = toolbarView ?: return
+        val bubble = toolbarBubble ?: return
+        if (collapsed == toolbarCollapsed && bar.visibility == (if (collapsed) View.GONE else View.VISIBLE)) return
+        toolbarCollapsed = collapsed
+        prefs.edit().putBoolean("toolbar_hidden", collapsed).apply()
+        bar.visibility = if (collapsed) View.GONE else View.VISIBLE
+        bubble.visibility = if (collapsed) View.VISIBLE else View.GONE
+        if (!collapsed) root.post { toolbars.forEach { it.update(force = true) } }
+        host.toolbarCollapsedChanged(collapsed)
+    }
+
+    /** Long-press on the circle: every tool of the current screen as a grid of icons. */
+    private fun showToolsGrid(anchor: View) {
+        val row = when (DataManager.mode) {
+            DataManager.MODE_PRACTICE -> R.id.practice_tools
+            DataManager.MODE_PDF -> R.id.pdf_tools
+            else -> R.id.board_tools
+        }
+        val line = (root.findViewById<View>(row) as? ViewGroup)?.getChildAt(0) as? ViewGroup ?: return
+        val items = ArrayList<Item>()
+        for (i in 0 until line.childCount) {
+            val v = line.getChildAt(i)
+            if (v.id == View.NO_ID || v.id in intArrayOf(R.id.btn_board_more, R.id.btn_practice_more, R.id.btn_pdf_more,
+                    R.id.btn_board_hide, R.id.btn_practice_hide, R.id.btn_pdf_hide, R.id.tv_pdf_page,
+                    R.id.btn_board_grip, R.id.btn_practice_grip, R.id.btn_pdf_grip)) continue
+            if (v.id == R.id.btn_pdf_search && !PdfSearch.supported) continue
+            val label = ((v as? TextView)?.text ?: v.contentDescription ?: "").toString()
+            val icon = toolIcons[v.id] ?: when (v.id) {
+                R.id.btn_add_image -> R.drawable.ic_image
+                R.id.btn_add_pdf -> R.drawable.ic_pdf
+                R.id.btn_prev -> R.drawable.ic_prev
+                R.id.btn_next -> R.drawable.ic_next
+                R.id.btn_play -> if (PracticeTimer.running) R.drawable.ic_pause else R.drawable.ic_play
+                R.id.btn_pdf_prev -> R.drawable.ic_page_up
+                R.id.btn_pdf_next -> R.drawable.ic_page_down
+                else -> R.drawable.ic_more
+            }
+            val name = if (v.id == R.id.btn_play) (if (PracticeTimer.running) "Pause" else "Play") else label
+            items += Item(name, icon, danger = v.id == R.id.btn_delete, enabled = v.isEnabled) { v.performClick() }
+        }
+        items += Item("Show bar", R.drawable.ic_tools_show) { setToolbarCollapsed(false) }
+        val (x, y) = anchorBelow(anchor)
+        menu.show(x, y - dp(8f) - menuHostView.height / 2f, listOf(MenuCard.Grid(items, columns = 5)))
+    }
+
+    private fun dp(v: Float) = v * root.resources.displayMetrics.density
+
+    // ---------------------------------------------------------------- Toolbar on the bottom, left or right (full screen)
+
+    companion object {
+        const val SIDE_BOTTOM = 0
+        const val SIDE_LEFT = 1
+        const val SIDE_RIGHT = 2
+    }
+
+    var toolbarSide = SIDE_BOTTOM
+        private set
+    private val toolRows: List<LinearLayout> = listOf(R.id.board_tools, R.id.practice_tools, R.id.pdf_tools, R.id.pdf_choose_tools)
+        .mapNotNull { (root.findViewById<View>(it) as? ViewGroup)?.getChildAt(0) as? LinearLayout }
+    private val grips: List<View> = listOf(R.id.btn_board_grip, R.id.btn_practice_grip, R.id.btn_pdf_grip)
+        .mapNotNull { root.findViewById(it) }
+
+    init {
+        if (toolbarView != null && grips.isNotEmpty()) {
+            toolbarSide = prefs.getInt("toolbar_side", SIDE_BOTTOM).coerceIn(SIDE_BOTTOM, SIDE_RIGHT)
+            for (g in grips) setupGrip(g)
+            root.post { applyToolbarSide() }
+        }
+    }
+
+    /** Puts the toolbar on [side] (and remembers it); Settings and dragging the handle both use this. */
+    fun setToolbarSide(side: Int) {
+        if (toolbarView == null) return
+        toolbarSide = side.coerceIn(SIDE_BOTTOM, SIDE_RIGHT)
+        prefs.edit().putInt("toolbar_side", toolbarSide).apply()
+        applyToolbarSide()
+    }
+
+    /** Reads the side again (after Settings changed it). */
+    fun reloadToolbarSide() {
+        if (toolbarView == null || grips.isEmpty()) return
+        val side = prefs.getInt("toolbar_side", SIDE_BOTTOM).coerceIn(SIDE_BOTTOM, SIDE_RIGHT)
+        if (side != toolbarSide) setToolbarSide(side)
+    }
+
+    private fun applyToolbarSide() {
+        val bar = toolbarView ?: return
+        val upright = toolbarSide != SIDE_BOTTOM
+        val d = root.resources.displayMetrics.density
+        for (row in toolRows) {
+            row.orientation = if (upright) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+            row.gravity = if (upright) android.view.Gravity.CENTER_HORIZONTAL else android.view.Gravity.CENTER_VERTICAL
+            for (i in 0 until row.childCount) {
+                val c = row.getChildAt(i)
+                val lp = c.layoutParams as? ViewGroup.MarginLayoutParams ?: continue
+                if (c.javaClass == View::class.java && c.id == View.NO_ID) {
+                    // Separators: a short line across the bar.
+                    lp.width = ((if (upright) 28 else 1) * d).toInt()
+                    lp.height = ((if (upright) 1 else 28) * d).toInt()
+                    val m = (6 * d).toInt()
+                    lp.setMargins(if (upright) 0 else m, if (upright) m else 0, if (upright) 0 else m, if (upright) m else 0)
+                    c.layoutParams = lp
+                }
+            }
+        }
+        for (g in grips) {
+            g.layoutParams = g.layoutParams.apply {
+                width = ((if (upright) 58 else 26) * d).toInt()
+                height = ((if (upright) 26 else 58) * d).toInt()
+            }
+            g.rotation = if (upright) 90f else 0f
+        }
+        (bar.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let {
+            it.gravity = when (toolbarSide) {
+                SIDE_LEFT -> android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+                SIDE_RIGHT -> android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+                else -> android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
+            }
+            bar.layoutParams = it
+        }
+        host.toolbarCollapsedChanged(toolbarCollapsed)
+        root.post { toolbars.forEach { it.update(force = true) } }
+    }
+
+    /** Drag the handle: the toolbar follows the finger and snaps to the left, the right or the bottom. */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private fun setupGrip(grip: View) {
+        var startX = 0f
+        var startY = 0f
+        var moved = false
+        grip.setOnTouchListener { _, e ->
+            val bar = toolbarView ?: return@setOnTouchListener false
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    startX = e.rawX; startY = e.rawY; moved = false
+                    bar.animate().cancel()
+                    // The toolbar row scrolls sideways; the handle must win, so no parent may take this touch.
+                    grip.parent.requestDisallowInterceptTouchEvent(true)
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    grip.parent.requestDisallowInterceptTouchEvent(true)
+                    val dx = e.rawX - startX
+                    val dy = e.rawY - startY
+                    if (!moved && Math.hypot(dx.toDouble(), dy.toDouble()) > 12 * root.resources.displayMetrics.density) moved = true
+                    if (moved) {
+                        bar.translationX = dx
+                        bar.translationY = dy
+                        bar.alpha = 0.85f
+                    }
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    bar.alpha = 1f
+                    if (!moved) {
+                        if (e.actionMasked == android.view.MotionEvent.ACTION_UP) host.toast("Drag this handle to move the toolbar to the left, the right or the bottom")
+                    } else {
+                        val w = root.width.toFloat()
+                        val side = when {
+                            e.rawX < w * 0.3f -> SIDE_LEFT
+                            e.rawX > w * 0.7f -> SIDE_RIGHT
+                            else -> SIDE_BOTTOM
+                        }
+                        bar.translationX = 0f
+                        bar.translationY = 0f
+                        setToolbarSide(side)
+                    }
+                }
+            }
+            true
+        }
+    }
+
     private fun setupAdaptiveToolbars() {
         // Not offered on this Android version: take it off the toolbar so fitting it never shows it again.
         if (!PdfSearch.supported) (btnSearch.parent as? ViewGroup)?.removeView(btnSearch)
@@ -165,23 +363,23 @@ class BoardController(
             boardTools as android.widget.HorizontalScrollView, root.findViewById(R.id.btn_board_more),
             views(R.id.btn_arrange, R.id.btn_b_redo, R.id.btn_copy, R.id.btn_paste, R.id.btn_note, R.id.btn_picker,
                 R.id.btn_fit, R.id.btn_rotate, R.id.btn_bw, R.id.btn_crop, R.id.btn_flip, R.id.btn_b_undo, R.id.btn_delete),
-            ::toolbarWidth, ::showOverflow
+            ::toolbarWidth, ::showOverflow, { toolbarSide != SIDE_BOTTOM }
         )
         toolbars += AdaptiveToolbar(
             practiceTools as android.widget.HorizontalScrollView, root.findViewById(R.id.btn_practice_more),
             views(R.id.btn_p_add, R.id.btn_memory, R.id.btn_p_bw, R.id.btn_p_flip, R.id.btn_class, R.id.btn_interval),
-            ::toolbarWidth, ::showOverflow
+            ::toolbarWidth, ::showOverflow, { toolbarSide != SIDE_BOTTOM }
         )
         toolbars += AdaptiveToolbar(
             pdfTools as android.widget.HorizontalScrollView, root.findViewById(R.id.btn_pdf_more),
             views(R.id.btn_pdf_practice, R.id.btn_pdf_to_board, R.id.btn_pdf_spread, R.id.btn_pdf_bookmark, R.id.btn_pdf_pages,
                 R.id.btn_pdf_recent, R.id.btn_pdf_search, R.id.btn_pdf_snip, R.id.btn_pdf_fit, R.id.btn_pdf_open),
-            ::toolbarWidth, ::showOverflow
+            ::toolbarWidth, ::showOverflow, { toolbarSide != SIDE_BOTTOM }
         )
         toolbars += AdaptiveToolbar(
             pdfChooseTools as android.widget.HorizontalScrollView, root.findViewById(R.id.btn_choose_more),
             views(R.id.btn_choose_none, R.id.btn_choose_pages, R.id.btn_choose_all),
-            ::toolbarWidth, ::showOverflow
+            ::toolbarWidth, ::showOverflow, { toolbarSide != SIDE_BOTTOM }
         )
         // Re-fit whenever the screen or window changes width (rotation, split screen, resizing).
         root.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or_, _ ->
@@ -193,6 +391,11 @@ class BoardController(
     /** Width a toolbar row may use. */
     private fun toolbarWidth(): Int {
         val bar = boardTools.parent as View
+        if (!compact && toolbarSide != SIDE_BOTTOM) {
+            // Standing on the left or right: the room is the screen height between the top bar and the bottom.
+            val lp = bar.layoutParams as ViewGroup.MarginLayoutParams
+            return root.height - lp.topMargin - lp.bottomMargin - bar.paddingTop - bar.paddingBottom
+        }
         return if (compact) {
             // Floating window: toolbars span the window.
             bar.width - bar.paddingLeft - bar.paddingRight
@@ -898,14 +1101,19 @@ class BoardController(
     private fun showItemMenu(item: RefBoardItem, x: Float, y: Float) {
         val rows = ArrayList<Row>()
         rows += Header("Picture")
-        rows += Item("Copy", R.drawable.ic_copy) { copySelected() }
-        rows += Item("Flip horizontally", R.drawable.ic_flip) { editItem(item) { it.flipped = !it.flipped } }
-        rows += Item("Rotate right", R.drawable.ic_rotate) { editItem(item) { it.rotateCW() } }
+        // The toolbar has these; when it is minimised they are here as a compact row of icons instead.
+        if (toolbarCollapsed) {
+            rows += MenuCard.Grid(listOf(
+                Item("Copy", R.drawable.ic_copy) { copySelected() },
+                Item("Flip", R.drawable.ic_flip) { editItem(item) { it.flipped = !it.flipped } },
+                Item("Rotate", R.drawable.ic_rotate) { editItem(item) { it.rotateCW() } },
+                Item("Crop", R.drawable.ic_crop) { startCrop(item) },
+                Item("B&W", R.drawable.ic_bw) { editItem(item) { it.grayscale = !it.grayscale } },
+                Item("Delete", R.drawable.ic_delete, danger = true) { deleteItem(item) }
+            ), columns = 6)
+        }
         rows += Item("Rotate left", R.drawable.ic_rotate_left) { editItem(item) { it.rotateCCW() } }
-        rows += Item("Crop", R.drawable.ic_crop) { startCrop(item) }
         if (item.crop != null) rows += Item("Show the whole picture", R.drawable.ic_fit) { editItem(item) { it.applyCrop(null) } }
-        rows += Header("Study")
-        rows += Item(if (item.grayscale) "Show in colour" else "Black & white", R.drawable.ic_bw) { editItem(item) { it.grayscale = !it.grayscale } }
         rows += Item(if (item.values > 0) "Value steps (${item.values})…" else "Value steps…", R.drawable.ic_values) {
             val opts = listOf(0, 2, 3, 4, 5)
             choose(x, y, "Value steps", opts.map { (if (it == 0) "Off" else "$it greys") to (it == item.values) }, R.drawable.ic_values) { i ->
@@ -920,13 +1128,11 @@ class BoardController(
             }
         }
         rows += Item("Opacity (${Math.round(item.opacity * 100)}%)…", R.drawable.ic_opacity) { chooseOpacity(item, x, y) }
-        rows += Header("Board")
         rows += Item(if (item.locked) "Unlock" else "Lock in place", R.drawable.ic_lock) { editItem(item) { it.locked = !it.locked } }
-        if (host.canFloat) rows += Item("Float this picture over other apps", R.drawable.ic_pin) { host.floatItem(item) }
-        rows += Item("Zoom to this picture", R.drawable.ic_zoom) { canvas.fitItem(item) }
+        if (host.canFloat) rows += Item("Float this picture", R.drawable.ic_pin) { host.floatItem(item) }
         rows += Item("Send to practice", R.drawable.ic_timer) { sendToPractice(item) }
+        rows += Item("Zoom to this picture", R.drawable.ic_zoom) { canvas.fitItem(item) }
         rows += Item("Reset size, rotation and looks", R.drawable.ic_reset) { editItem(item) { it.resetTransforms() } }
-        rows += Item("Delete", R.drawable.ic_delete, danger = true) { deleteItem(item) }
         menu.show(x, y, rows)
     }
 
@@ -935,12 +1141,13 @@ class BoardController(
             x, y, listOf(
                 Header("Note"),
                 Item("Edit note", R.drawable.ic_note) { editNote(item) },
-                Item("Copy", R.drawable.ic_copy) { copySelected() },
                 Item("Opacity (${Math.round(item.opacity * 100)}%)…", R.drawable.ic_opacity) { chooseOpacity(item, x, y) },
                 Item(if (item.locked) "Unlock" else "Lock in place", R.drawable.ic_lock) { editItem(item) { it.locked = !it.locked } },
-                Item("Zoom to this note", R.drawable.ic_zoom) { canvas.fitItem(item) },
+                Item("Zoom to this note", R.drawable.ic_zoom) { canvas.fitItem(item) }
+            ) + (if (toolbarCollapsed) listOf(
+                Item("Copy", R.drawable.ic_copy) { copySelected() },
                 Item("Delete", R.drawable.ic_delete, danger = true) { deleteItem(item) }
-            )
+            ) else emptyList())
         )
     }
 
@@ -1188,11 +1395,12 @@ class BoardController(
         val hasItems = DataManager.items.isNotEmpty()
         val rows = ArrayList<Row>()
         rows += Header(DataManager.boardTitle + if (DataManager.boardDirty && hasItems) "  •  not saved" else "")
+        rows += Item(if (DataManager.boardName.isEmpty()) "Name this board…" else "Rename board…", R.drawable.ic_note) { askBoardName(rename = true) }
         rows += Item("New board", R.drawable.ic_add) { newBoard() }
         rows += Item("Open board…", R.drawable.ic_folder) { host.openBoardFile() }
         rows += Item("Save board", R.drawable.ic_copy, enabled = hasItems) { saveBoard() }
         rows += Item("Save board as…", R.drawable.ic_copy, enabled = hasItems) { host.createBoardFile(DataManager.boardTitle) }
-        val others = BoardFiles.recent(ctx).filter { it.uri != DataManager.boardUri }.take(6)
+        val others = BoardFiles.recent(ctx).filter { it.uri != DataManager.boardUri }.take(4)
         if (others.isNotEmpty()) {
             rows += Header("Recent boards")
             for (r in others) rows += Item(r.name, R.drawable.ic_history) { openBoard(Uri.parse(r.uri)) }
@@ -1213,7 +1421,19 @@ class BoardController(
     private fun newBoard() = beforeSwitch {
         DataManager.replaceBoard(emptyList(), null, "")
         DataManager.setMode(DataManager.MODE_BOARD)
-        host.toast("New board")
+        askBoardName(rename = false)
+    }
+
+    /** Asks for the board's name: for a new board (optional), or to rename / name the current one. */
+    private fun askBoardName(rename: Boolean) {
+        val current = DataManager.boardName
+        host.askText(
+            if (!rename) "Name your new board" else if (current.isEmpty()) "Name this board" else "Rename board",
+            "e.g. Chapter 3 references", if (rename) current else ""
+        ) { text ->
+            if (text.isBlank()) return@askText
+            BoardFiles.rename(root.context, text)
+        }
     }
 
     /**
@@ -1291,6 +1511,7 @@ class BoardController(
     /** Starts choosing pages in the reader: all of them ([pages] null) or just [pages]. */
     private fun startChoosing(pages: List<Int>?) {
         if (DataManager.currentDoc == null) return
+        setToolbarCollapsed(false) // choosing pages needs its Add / Cancel bar
         viewer.startChoosing(all = pages == null)
         if (pages != null) viewer.choose(pages)
         updateMode()

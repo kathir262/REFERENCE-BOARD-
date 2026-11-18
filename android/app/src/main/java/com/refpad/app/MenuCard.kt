@@ -21,6 +21,8 @@ class MenuCard(private val host: FrameLayout, private val compact: Boolean) {
 
     sealed class Row
     class Header(val title: String) : Row()
+    /** Small icon buttons with a short label, several per line (quick actions without a long list). */
+    class Grid(val items: List<Item>, val columns: Int = 5) : Row()
     class Item(
         val label: String,
         val icon: Int,
@@ -63,6 +65,7 @@ class MenuCard(private val host: FrameLayout, private val compact: Boolean) {
             when (row) {
                 is Header -> list.addView(header(row.title, first = i == 0))
                 is Item -> list.addView(item(row))
+                is Grid -> grid(row).forEach { list.addView(it) }
             }
         }
         val scroll = ScrollView(ctx).apply {
@@ -135,6 +138,41 @@ class MenuCard(private val host: FrameLayout, private val compact: Boolean) {
         typeface = Typeface.DEFAULT_BOLD
         setTextColor(ctx.getColor(R.color.text_muted))
         setPadding(dp(12), dp(if (first) 6 else 14), dp(12), dp(4))
+    }
+
+    private fun grid(g: Grid): List<View> {
+        val lines = ArrayList<View>()
+        for (chunk in g.items.chunked(g.columns.coerceAtLeast(1))) {
+            val line = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+            for (row in chunk) {
+                val cell = TextView(ctx).apply {
+                    text = row.label
+                    textSize = 10.5f
+                    gravity = Gravity.CENTER
+                    maxLines = 1
+                    setTextColor(ctx.getColor(if (row.danger) R.color.danger else R.color.text_primary))
+                    setPadding(dp(2), dp(8), dp(2), dp(6))
+                    compoundDrawablePadding = dp(4)
+                    background = ctx.getDrawable(R.drawable.bg_menu_item)
+                    ctx.getDrawable(row.icon)?.mutate()?.let { icon ->
+                        icon.setBounds(0, 0, dp(22), dp(22))
+                        setCompoundDrawablesRelative(null, icon, null, null)
+                    }
+                    compoundDrawableTintList = ColorStateList.valueOf(ctx.getColor(if (row.danger) R.color.danger else R.color.text_secondary))
+                    isEnabled = row.enabled
+                    alpha = if (row.enabled) 1f else 0.38f
+                    setOnClickListener {
+                        dismiss()
+                        row.action()
+                    }
+                }
+                line.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            // Keep cells the same width on a last, shorter line.
+            repeat(g.columns - chunk.size) { line.addView(View(ctx), LinearLayout.LayoutParams(0, 1, 1f)) }
+            lines += line
+        }
+        return lines
     }
 
     private fun item(row: Item) = TextView(ctx).apply {

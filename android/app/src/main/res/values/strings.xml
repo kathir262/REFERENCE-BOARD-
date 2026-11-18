@@ -33,6 +33,10 @@
     <string name="bookmark">Bookmark</string>
     <string name="open_board">Open board in RefPad</string>
     <string name="settings">Settings</string>
+    <string name="hide">Hide</string>
+    <string name="move_toolbar">Drag to move the toolbar to the left, the right or the bottom</string>
+    <string name="hide_toolbar">Minimise the toolbar</string>
+    <string name="show_toolbar">Show the toolbar (long-press for all tools)</string>
     <string name="minimize">Minimise</string>
     <string name="close">Close</string>
     <string name="resize">Resize</string>

@@ -120,9 +120,11 @@ object DataManager {
                 practiceIndex = if (hadPractice) practiceIndex + state.practice.size
                 else state.practiceIndex.coerceIn(0, max(0, practice.size - 1))
                 for (d in state.docs) if (docs.none { it.docId == d.docId }) docs.add(d)
-                boardUri = state.boardUri
+                // A board file RefPad may no longer write to (permission gone) becomes unsaved again, keeping its name.
+                val kept = state.boardUri?.takeIf { hasWriteAccess(context, it) }
+                boardUri = kept
                 boardName = state.boardName
-                boardDirty = state.boardDirty
+                boardDirty = state.boardDirty || (state.boardUri != null && kept == null)
                 // Reopen the mode you were in, if it still has something to show.
                 if (mode == MODE_BOARD && state.mode != MODE_BOARD &&
                     (state.mode != MODE_PDF || docs.isNotEmpty()) && (state.mode != MODE_PRACTICE || practice.isNotEmpty())
@@ -341,6 +343,28 @@ object DataManager {
         each { it.onBoardChanged() }
         each { it.onBoardFileChanged() }
         requestFit()
+        scheduleSave()
+    }
+
+    private fun hasWriteAccess(context: Context, uri: String): Boolean = try {
+        context.contentResolver.persistedUriPermissions.any { it.uri.toString() == uri && it.isWritePermission }
+    } catch (e: Exception) {
+        true
+    }
+
+    /** Gives the board a name (an untitled board keeps it until it is saved; Save suggests it as the file name). */
+    fun nameBoard(name: String) {
+        boardName = name.trim()
+        each { it.onBoardFileChanged() }
+        scheduleSave()
+    }
+
+    /** The board's file was renamed (or, with [uri] null, the board is unsaved again under [name]). */
+    fun boardRenamed(uri: String?, name: String) {
+        boardUri = uri
+        boardName = name
+        if (uri == null) markDirty()
+        each { it.onBoardFileChanged() }
         scheduleSave()
     }
 

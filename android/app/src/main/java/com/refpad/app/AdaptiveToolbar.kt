@@ -16,7 +16,9 @@ class AdaptiveToolbar(
     /** Tools that may be hidden, the first one is hidden first. */
     private val hideOrder: List<View>,
     private val availableWidth: () -> Int,
-    private val onMore: (anchor: View, hidden: List<View>) -> Unit
+    private val onMore: (anchor: View, hidden: List<View>) -> Unit,
+    /** True when the bar stands upright on the left or right: then tools are fitted by height. */
+    private val vertical: () -> Boolean = { false }
 ) {
     private val row = scroll.getChildAt(0) as LinearLayout
     /** Plain separator views (no id); dropped first when space is short. */
@@ -59,6 +61,7 @@ class AdaptiveToolbar(
     }
 
     private fun naturalWidth(): Int {
+        if (vertical()) return naturalHeight()
         var w = row.paddingLeft + row.paddingRight
         val unspecified = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
         for (i in 0 until row.childCount) {
@@ -75,5 +78,23 @@ class AdaptiveToolbar(
             w += c.measuredWidth + (mlp?.leftMargin ?: 0) + (mlp?.rightMargin ?: 0)
         }
         return w
+    }
+
+    private fun naturalHeight(): Int {
+        var h = row.paddingTop + row.paddingBottom
+        val unspecified = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        for (i in 0 until row.childCount) {
+            val c = row.getChildAt(i)
+            if (c.visibility == View.GONE) continue
+            val lp = c.layoutParams
+            val widthSpec = if (lp != null && lp.width >= 0)
+                View.MeasureSpec.makeMeasureSpec(lp.width, View.MeasureSpec.EXACTLY) else unspecified
+            val heightSpec = if (lp != null && lp.height >= 0)
+                View.MeasureSpec.makeMeasureSpec(lp.height, View.MeasureSpec.EXACTLY) else unspecified
+            c.measure(widthSpec, heightSpec)
+            val mlp = lp as? ViewGroup.MarginLayoutParams
+            h += c.measuredHeight + (mlp?.topMargin ?: 0) + (mlp?.bottomMargin ?: 0)
+        }
+        return h
     }
 }

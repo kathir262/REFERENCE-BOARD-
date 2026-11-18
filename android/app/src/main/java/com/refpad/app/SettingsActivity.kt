@@ -87,6 +87,22 @@ class SettingsActivity : Activity() {
             topMargin = dp(8)
         })
 
+        // Toolbar
+        section("Toolbar")
+        text("Position (you can also drag the toolbar by the dotted handle at its start)", 15f, R.color.text_primary)
+        val prefs = getSharedPreferences("refpad", MODE_PRIVATE)
+        val side = prefs.getInt("toolbar_side", BoardController.SIDE_BOTTOM)
+        val sides = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        for ((i, name) in listOf("Bottom", "Left side", "Right side").withIndex()) {
+            sides.addView(chip(name, i == side) {
+                prefs.edit().putInt("toolbar_side", i).apply()
+                build()
+            }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { if (i > 0) marginStart = dp(8) })
+        }
+        list.addView(sides, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(8)
+        })
+
         // Practice
         section("Practice")
         switch("Memory mode", "When a pose's time is up it hides, and you draw it from memory", PracticeTimer.memory) { on ->

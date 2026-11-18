@@ -119,6 +119,58 @@ object BoardFiles {
         false
     }
 
+    /** A name that works as a file name everywhere. */
+    fun cleanName(name: String) = name.replace(Regex("""[\\/:*?"<>|]"""), " ").trim().removeSuffix(EXT).trim().ifEmpty { "Board" }
+
+    /**
+     * Renames the board. With a file, the file itself is renamed (Files, Downloads, Drive… allow it); if the
+     * storage can't, or RefPad can't keep access to the renamed file, the board keeps the new name and Save asks
+     * where to save it again. Without a file, only the name changes.
+     */
+    fun rename(context: Context, newName: String) {
+        val app = context.applicationContext
+        val name = cleanName(newName)
+        val old = DataManager.boardUri
+        if (old == null) {
+            DataManager.nameBoard(name)
+            toast(app, "Board named “$name”")
+            return
+        }
+        Storage.io.execute {
+            val renamed: Uri? = try {
+                android.provider.DocumentsContract.renameDocument(app.contentResolver, Uri.parse(old), name + EXT)
+            } catch (e: Exception) {
+                Log.w(TAG, "Rename not possible", e)
+                null
+            }
+            main.post {
+                if (renamed == null) {
+                    // This storage can't rename files: keep the file, show the new name in RefPad.
+                    DataManager.nameBoard(name)
+                    toast(app, "Named “$name” in RefPad (this storage can't rename the file itself)")
+                    return@post
+                }
+                val ok = renamed.toString() == old || try {
+                    app.contentResolver.takePersistableUriPermission(
+                        renamed, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                    true
+                } catch (e: Exception) {
+                    false
+                }
+                save(app, recent(app).filter { it.uri != old })
+                if (ok) {
+                    DataManager.boardRenamed(renamed.toString(), name)
+                    remember(app, renamed.toString(), name)
+                    toast(app, "Renamed to “$name”")
+                } else {
+                    DataManager.boardRenamed(null, name)
+                    toast(app, "Renamed to “$name”. Tap Save once to keep saving it.")
+                }
+            }
+        }
+    }
+
     fun displayName(context: Context, uri: Uri): String {
         val name = try {
             context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->

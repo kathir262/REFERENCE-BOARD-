@@ -86,6 +86,7 @@ class MainActivity : Activity(), BoardController.Host {
 
     override fun onStart() {
         super.onStart()
+        controller.reloadToolbarSide() // Settings may have moved it
         controller.attach()
         PracticeTimer.hostShown()
         // Website version only: a newer RefPad on GitHub is offered at most once a day.
@@ -155,6 +156,7 @@ class MainActivity : Activity(), BoardController.Host {
         val canvas = findViewById<View>(R.id.ref_canvas)
         val viewer = findViewById<View>(R.id.pdf_viewer)
         val scrim = findViewById<View>(R.id.status_scrim)
+        val bubble = findViewById<View>(R.id.toolbar_bubble)
 
         root.setOnApplyWindowInsetsListener { _, insets ->
             val (l, t, r, b) = if (Build.VERSION.SDK_INT >= 30) {
@@ -167,10 +169,18 @@ class MainActivity : Activity(), BoardController.Host {
             (topBar.layoutParams as FrameLayout.LayoutParams).apply {
                 topMargin = dp(10) + t; leftMargin = dp(12) + l; rightMargin = dp(12) + r
             }
+            val side = controller.toolbarSide
             (toolbar.layoutParams as FrameLayout.LayoutParams).apply {
-                bottomMargin = dp(16) + b; leftMargin = dp(12) + l; rightMargin = dp(12) + r
+                if (side == BoardController.SIDE_BOTTOM) {
+                    topMargin = 0; bottomMargin = dp(16) + b; leftMargin = dp(12) + l; rightMargin = dp(12) + r
+                } else {
+                    // Standing on a side: between the top bar and the bottom of the screen.
+                    topMargin = dp(84) + t; bottomMargin = dp(16) + b
+                    leftMargin = dp(12) + l; rightMargin = dp(12) + r
+                }
             }
-            (chip.layoutParams as FrameLayout.LayoutParams).bottomMargin = dp(104) + b
+            bottomInset = b
+            (chip.layoutParams as FrameLayout.LayoutParams).bottomMargin = dp(if (controller.toolbarCollapsed) 88 else 104) + b
             scrim.layoutParams.height = t
             scrim.requestLayout()
             // On phones the timer pill sits under the bar, so poses are fitted below it.
@@ -180,8 +190,17 @@ class MainActivity : Activity(), BoardController.Host {
                 (hud.layoutParams as FrameLayout.LayoutParams).topMargin = dp(78) + t
                 hud.requestLayout()
             }
-            canvas.setPadding(l, dp(80) + t + hudSpace, r, dp(100) + b)
-            viewer.setPadding(l, dp(80) + t, r, dp(100) + b)
+            // Room for the toolbar where it is; minimised to a circle, pictures and pages use the whole space.
+            val collapsed = controller.toolbarCollapsed
+            val bottom = if (collapsed || side != BoardController.SIDE_BOTTOM) dp(16) else dp(100)
+            val padL = if (!collapsed && side == BoardController.SIDE_LEFT) dp(104) else 0
+            val padR = if (!collapsed && side == BoardController.SIDE_RIGHT) dp(104) else 0
+            canvas.setPadding(l + padL, dp(80) + t + hudSpace, r + padR, bottom + b)
+            viewer.setPadding(l + padL, dp(80) + t, r + padR, bottom + b)
+            (bubble.layoutParams as FrameLayout.LayoutParams).apply {
+                bottomMargin = dp(18) + b; leftMargin = dp(18) + l
+            }
+            bubble.requestLayout()
             topBar.requestLayout()
             toolbar.requestLayout()
             chip.requestLayout()
@@ -251,6 +270,17 @@ class MainActivity : Activity(), BoardController.Host {
     override fun showHistory() = HistoryDialog.show(this, overlay = false)
 
     override val canFloat = true
+
+    override fun toolbarCollapsedChanged(collapsed: Boolean) {
+        findViewById<View>(R.id.main_root).requestApplyInsets()
+        findViewById<View>(R.id.status_chip).let {
+            (it.layoutParams as FrameLayout.LayoutParams).bottomMargin =
+                (if (collapsed) 88 else 104).let { v -> (v * resources.displayMetrics.density).toInt() } + bottomInset
+            it.requestLayout()
+        }
+    }
+
+    private var bottomInset = 0
 
     override fun floatItem(item: RefBoardItem) {
         DataManager.floatFocusId = item.id
