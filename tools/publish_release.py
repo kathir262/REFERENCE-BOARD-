@@ -118,14 +118,18 @@ def android_files(v: str) -> list:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", choices=["windows", "android"])
+    ap.add_argument("--version", help="release version (default: refpad/__init__.py); e.g. an Android-only fix")
     args = ap.parse_args()
-    v = __version__
+    v = args.version or __version__
     tag = f"v{v}"
     files = []
     if args.only != "android":
         files += windows_files(v)
     if args.only != "windows":
         files += android_files(v)
+    if args.only == "android" and (DIST / "RefPad-Setup.exe").exists():
+        # The website's Windows button points at the newest release; keep the current installer there too.
+        files.append(DIST / "RefPad-Setup.exe")
     notes_file = ROOT / "release-notes" / f"{v}.md"
     if not notes_file.exists():
         sys.exit(f"Write the release notes first: {notes_file}")

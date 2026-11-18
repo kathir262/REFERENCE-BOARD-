@@ -634,7 +634,8 @@ class RefCanvasView @JvmOverloads constructor(
         val r = 34f * density
         var cy = pickY - 84f * density
         if (cy < r + 8f * density) cy = pickY + 84f * density
-        val cx = pickX.coerceIn(r + 6f * density, width - r - 6f * density)
+        val lo = r + 6f * density
+        val cx = pickX.coerceIn(lo, max(lo, width - r - 6f * density)) // a very narrow window: just keep it on screen
         loupeFill.color = pickColor
         canvas.drawCircle(cx, cy, r, loupeFill)
         loupeRing.strokeWidth = 4f * density

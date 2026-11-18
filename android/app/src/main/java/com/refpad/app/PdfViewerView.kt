@@ -410,8 +410,15 @@ class PdfViewerView @JvmOverloads constructor(
 
     private fun layoutStrip() {
         val d = doc ?: return
+        if (!stripShown) {
+            // Hidden: nothing to lay out (its width is 0, which would make every cell size negative).
+            stripTops = FloatArray(0)
+            stripHs = FloatArray(0)
+            stripTotal = 0f
+            return
+        }
         val pad = 8f * density
-        val tw = stripW - 2 * pad
+        val tw = (stripW - 2 * pad).coerceAtLeast(1f)
         val label = 16f * density
         stripTops = FloatArray(d.pageCount)
         stripHs = FloatArray(d.pageCount)

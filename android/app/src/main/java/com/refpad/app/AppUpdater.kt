@@ -75,8 +75,9 @@ object AppUpdater {
         if (!isEnabled(activity) || !autoCheck(activity) || busy) return
         val p = prefs(activity)
         if (System.currentTimeMillis() - p.getLong("last_update_check", 0L) < 20L * 3600 * 1000) return
-        check(activity) { rel, _ ->
-            p.edit().putLong("last_update_check", System.currentTimeMillis()).apply()
+        check(activity) { rel, error ->
+            // Only a check that reached GitHub counts; offline, it simply tries again next time RefPad opens.
+            if (error == null) p.edit().putLong("last_update_check", System.currentTimeMillis()).apply()
             if (rel != null && rel.version != p.getString("skip_version", "")) offer(activity, rel, manual = false)
         }
     }
