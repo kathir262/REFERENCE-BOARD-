@@ -355,9 +355,34 @@ class BoardController(
     override fun onBoardFileChanged() = updateTitle()
 
     override fun onChoosePages(doc: ViewerDoc) {
-        viewer.startChoosing(all = true)
-        updateMode()
-        host.toast("Tap pages to choose them, then tap Add")
+        val ctx = root.context
+        val n = doc.pageCount
+        val first = minOf(20, n)
+        main.post {
+            val (x, y) = centre()
+            menu.show(x, y, listOf(
+                Header("“${doc.title}” has $n pages"),
+                Item("Add all $n pages to the board", R.drawable.ic_arrange) {
+                    Importer.pagesToBoard(ctx, doc, (0 until n).toList())
+                },
+                Item("Add the first $first pages", R.drawable.ic_image) {
+                    Importer.pagesToBoard(ctx, doc, (0 until first).toList())
+                },
+                Item("Type page numbers…", R.drawable.ic_pdf) {
+                    host.askText("Pages to add", "e.g. 1-5, 8, 12-20", "1-$first") { text ->
+                        val pages = parsePages(text, n)
+                        if (pages.isNullOrEmpty()) host.toast("Type page numbers between 1 and $n, like 1-5, 8, 12-20")
+                        else Importer.pagesToBoard(ctx, doc, pages)
+                    }
+                },
+                Item("Pick pages by looking at them…", R.drawable.ic_pages) {
+                    DataManager.openDoc(doc)
+                    viewer.startChoosing(all = false)
+                    updateMode()
+                    host.toast("Tap pages to choose them, then tap Add")
+                }
+            ))
+        }
     }
 
     override fun onDocsChanged() {

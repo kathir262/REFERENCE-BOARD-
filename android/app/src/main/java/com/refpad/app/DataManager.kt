@@ -344,9 +344,9 @@ object DataManager {
         scheduleSave()
     }
 
-    /** Opens [doc] in the reader so its pages can be chosen for the board. */
+    /** A long PDF was added for the board: the board asks which pages to add (it does not switch to the reader). */
     fun choosePages(doc: ViewerDoc) {
-        openDoc(doc)
+        setMode(MODE_BOARD)
         each { it.onChoosePages(doc) }
     }
 

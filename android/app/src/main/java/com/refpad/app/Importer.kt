@@ -27,6 +27,8 @@ object Importer {
 
     private const val TAG = "RefPad"
     private const val BOARD_PDF_LONG_SIDE = 1200
+    /** A PDF for the board with up to this many pages goes straight onto the board; bigger ones ask first. */
+    const val BOARD_DIRECT_PAGES = 30
     private const val FOLDER_MAX_IMAGES = 60
 
     private val main = Handler(Looper.getMainLooper())
@@ -72,12 +74,13 @@ object Importer {
             Storage.io.execute {
                 for ((pfd, name) in files) {
                     when (target) {
-                        Target.BOARD -> pdfToViewer(app, pfd, name, choosePages = true)
+                        Target.BOARD -> pdfToViewer(app, pfd, name, forBoard = true)
                         Target.PRACTICE -> pdfToPractice(app, pfd)
                         Target.VIEWER -> pdfToViewer(app, pfd, name)
                     }
                 }
-                status(null)
+                // For the board, adding the pages shows its own progress (with STOP); don't clear it here.
+                if (target != Target.BOARD) status(null)
             }
         }
     }
@@ -287,22 +290,37 @@ object Importer {
         toast(app, "Loaded ${plural(count, "page")} into practice")
     }
 
-    private fun pdfToViewer(app: Context, pfd: ParcelFileDescriptor, name: String, choosePages: Boolean = false) {
+    /**
+     * Copies a PDF and opens it in the reader, or ([forBoard]) puts its pages on the board: all of them
+     * straight away for a short PDF, otherwise the board asks which pages (it stays on the board either way).
+     */
+    private fun pdfToViewer(app: Context, pfd: ParcelFileDescriptor, name: String, forBoard: Boolean = false) {
         status("Copying PDF…")
         val docId = Storage.newId()
         val file = Storage.pdfFile(docId)
         if (!copy(pfd, file)) {
+            status(null)
             toast(app, "Could not read that PDF")
             return
         }
         val aspects = PdfHelper.pageAspects(file) { done, total -> status("Reading page $done of $total…") }
         if (aspects == null) {
             file.delete()
+            status(null)
             toast(app, "Could not open this PDF. It may be damaged or password protected.")
             return
         }
         val doc = ViewerDoc(docId, name, aspects)
-        main.post { if (choosePages) DataManager.choosePages(doc) else DataManager.openDoc(doc) }
+        main.post {
+            when {
+                !forBoard -> DataManager.openDoc(doc)
+                doc.pageCount <= BOARD_DIRECT_PAGES -> pagesToBoard(app, doc, (0 until doc.pageCount).toList())
+                else -> {
+                    DataManager.setStatus(null)
+                    DataManager.choosePages(doc)
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------------ Helpers
