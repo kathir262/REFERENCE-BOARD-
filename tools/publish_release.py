@@ -149,12 +149,15 @@ def main():
                                                                     "draft": False, "prerelease": False})
         print(f"Updating release {tag}")
 
-    existing = {a["name"]: a["id"] for a in rel.get("assets", [])}
+    existing = {a["name"]: (a["id"], a["size"]) for a in rel.get("assets", [])}
     types = {".exe": "application/vnd.microsoft.portable-executable", ".zip": "application/zip",
              ".apk": "application/vnd.android.package-archive"}
     for f in files:
         if f.name in existing:
-            call("DELETE", f"{API}/releases/assets/{existing[f.name]}", tok)
+            if existing[f.name][1] == f.stat().st_size and f.suffix != ".sha256":
+                print(f"{f.name} is already there")
+                continue
+            call("DELETE", f"{API}/releases/assets/{existing[f.name][0]}", tok)
         print(f"Uploading {f.name} ({f.stat().st_size / 1e6:.1f} MB)...", flush=True)
         call("POST", f"{UPLOADS}/releases/{rel['id']}/assets?name={f.name}", tok, data=f.read_bytes(),
              ctype=types.get(f.suffix, "text/plain"))
