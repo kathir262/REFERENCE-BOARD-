@@ -219,13 +219,36 @@ class BoardController(
     fun attach() {
         DataManager.addListener(this)
         PracticeTimer.addListener(timerListener)
+        AppUpdater.addListener(updateListener)
         refreshAll()
     }
 
     fun detach() {
         DataManager.removeListener(this)
         PracticeTimer.removeListener(timerListener)
+        AppUpdater.removeListener(updateListener)
         menu.dismiss()
+    }
+
+    // ---------------------------------------------------------------- Update dot on ⋮
+
+    private val btnMore: ImageView? = root.findViewById<View>(R.id.btn_more) as? ImageView
+    private val moreTint = btnMore?.imageTintList
+    private val updateListener: () -> Unit = { updateBadge() }
+
+    /** A yellow dot on ⋮ while a new RefPad is waiting (Settings shows it too). */
+    private fun updateBadge() {
+        val b = btnMore ?: return
+        val waiting = AppUpdater.availableVersion(root.context) != null
+        if (b.tag == waiting) return
+        b.tag = waiting
+        if (waiting) {
+            b.setImageResource(R.drawable.ic_more_badge)
+            b.imageTintList = null
+        } else {
+            b.setImageResource(R.drawable.ic_more)
+            b.imageTintList = moreTint
+        }
     }
 
     // ---------------------------------------------------------------- Wiring
@@ -395,6 +418,7 @@ class BoardController(
     // ---------------------------------------------------------------- UI updates
 
     private fun refreshAll() {
+        updateBadge()
         updatePdfTools()
         updateTitle()
         updateMode()
@@ -828,12 +852,13 @@ class BoardController(
         val doc = DataManager.currentDoc
         val rows = ArrayList<Row>()
         rows += Header(doc?.title ?: "PDF")
-        rows += Item("Open another PDF", R.drawable.ic_pdf) { host.pickPdf(Importer.Target.VIEWER) }
         if (doc != null) {
             rows += Item("Add page ${page + 1} to the board", R.drawable.ic_image) { pageToBoard(page) }
             rows += Item("Add pages to the board…", R.drawable.ic_image) { startChoosing(listOf(page)) }
             rows += Item("Practise from page ${page + 1}", R.drawable.ic_timer) { practiseFrom(page) }
-            rows += Item("Fit width / whole page", R.drawable.ic_fit) { viewer.toggleFit() }
+        }
+        rows += Item("Open another PDF", R.drawable.ic_pdf) { host.pickPdf(Importer.Target.VIEWER) }
+        if (doc != null) {
             rows += Item(if (viewer.spread) "Two pages side by side  ✓" else "Two pages side by side", R.drawable.ic_spread) {
                 viewer.setSpread(!viewer.spread)
             }
@@ -845,22 +870,13 @@ class BoardController(
             }
             if (doc.bookmarks.isNotEmpty()) {
                 rows += Header("Bookmarks")
-                for (b in doc.bookmarks.take(12)) rows += Item("Page ${b + 1}", R.drawable.ic_bookmark) { viewer.goToPage(b) }
+                for (b in doc.bookmarks.take(5)) rows += Item("Page ${b + 1}", R.drawable.ic_bookmark) { viewer.goToPage(b) }
             }
-            rows += Item("Go to first page", R.drawable.ic_page_up) { viewer.goToPage(0) }
-            rows += Item("Go to last page", R.drawable.ic_page_down) { viewer.goToPage(doc.pageCount - 1) }
-        }
-        val others = DataManager.docs.drop(1)
-        if (others.isNotEmpty()) {
-            rows += Header("Recent")
-            for (d in others.take(6)) rows += Item(d.title, R.drawable.ic_history) { DataManager.openDoc(d) }
-        }
-        rows += host.extraMenuItems()
-        if (doc != null) {
             rows += Item("Remove from recent", R.drawable.ic_delete, danger = true, confirm = "Tap again to remove") {
                 DataManager.removeDoc(doc)
             }
         }
+        rows += host.extraMenuItems()
         menu.show(x, y, rows)
     }
 
@@ -937,64 +953,73 @@ class BoardController(
 
     private fun showBoardMenu(x: Float, y: Float, pasteAt: Pair<Float, Float>?) {
         val hasItems = DataManager.items.isNotEmpty()
+        val hasPictures = DataManager.items.any { !it.isNote }
         val rows = ArrayList<Row>()
-        rows += boardFileRows()
+        rows += Header(DataManager.boardTitle + if (DataManager.boardDirty && hasItems) "  •  not saved" else "")
+        rows += Item("New board", R.drawable.ic_add) { newBoard() }
+        rows += Item("Open board…", R.drawable.ic_folder) { host.openBoardFile() }
+        rows += Item("Save board", R.drawable.ic_copy, enabled = hasItems) { saveBoard() }
+        // Phones hide the board name (which has Save as and Recent boards): offer those here instead.
+        if (tvTitle == null || !tvTitle.isShown) {
+            rows += Item("Save as, recent boards…", R.drawable.ic_history) { main.post { menu.show(x, y, boardFileRows()) } }
+        }
         rows += Header("Board")
+        rows += Item("Add a note", R.drawable.ic_note) { addNote(pasteAt) }
         rows += Item("Paste", R.drawable.ic_paste, enabled = DataManager.clipboard != null || !compact) {
             paste(pasteAt?.first, pasteAt?.second)
         }
-        rows += Item("Add images", R.drawable.ic_image) { host.pickImages(Importer.Target.BOARD) }
-        rows += Item("Add PDF pages", R.drawable.ic_pdf) { host.pickPdf(Importer.Target.BOARD) }
-        if (host.canPickFolder) rows += Item("Import folder", R.drawable.ic_folder) { host.pickFolder(Importer.Target.BOARD) }
-        rows += Item("Add a note", R.drawable.ic_note) { addNote(pasteAt) }
-        rows += Item("Undo", R.drawable.ic_undo, enabled = DataManager.canUndo) { undo() }
-        rows += Item("Redo", R.drawable.ic_redo, enabled = DataManager.canRedo) { redo() }
-        rows += Item("Fit everything", R.drawable.ic_fit, enabled = hasItems) { canvas.fitAll() }
-        rows += Item("Arrange in rows", R.drawable.ic_arrange, enabled = hasItems) { DataManager.autoArrange() }
-        rows += Item("Background…", R.drawable.ic_palette) {
-            val names = listOf("Dark", "Neutral grey", "Light")
-            choose(x, y, "Board background", names.mapIndexed { i, n -> n to (i == DataManager.background) }, R.drawable.ic_palette) { i ->
-                DataManager.setBackground(i)
-            }
+        rows += Item("Practise with these images", R.drawable.ic_timer, enabled = hasPictures) {
+            DataManager.practiceWithBoardImages()
+            DataManager.setMode(DataManager.MODE_PRACTICE)
         }
+        rows += Item("Arrange in rows", R.drawable.ic_arrange, enabled = hasItems) { DataManager.autoArrange() }
         rows += Item("Export board as a picture (PNG)", R.drawable.ic_export, enabled = hasItems) {
             canvas.finishCrop()
             host.createExportFile(DataManager.boardTitle)
         }
-        rows += Item("Practise with these images", R.drawable.ic_timer, enabled = hasItems) {
-            DataManager.practiceWithBoardImages()
-            DataManager.setMode(DataManager.MODE_PRACTICE)
-        }
-        rows += host.extraMenuItems()
         rows += Item("Clear board", R.drawable.ic_delete, danger = true, enabled = hasItems, confirm = "Tap again to clear the board") {
             canvas.finishCrop()
             DataManager.clearBoard()
             showUndo("Board cleared")
         }
+        rows += host.extraMenuItems()
         menu.show(x, y, rows)
     }
 
     private fun showPracticeMenu(x: Float, y: Float) {
         val hasPoses = DataManager.practice.isNotEmpty()
+        val pose = DataManager.currentPose()
         val rows = ArrayList<Row>()
         rows += Header("Practice")
+        rows += Item("Add this pose to the board", R.drawable.ic_image, enabled = pose != null) { poseToBoard() }
         rows += Item("Open PDF art book", R.drawable.ic_pdf) { host.pickPdf(Importer.Target.PRACTICE) }
         rows += Item("Add images", R.drawable.ic_image) { host.pickImages(Importer.Target.PRACTICE) }
-        rows += Item("Use board images", R.drawable.ic_arrange, enabled = DataManager.items.isNotEmpty()) {
+        rows += Item("Use board images", R.drawable.ic_arrange, enabled = DataManager.items.any { !it.isNote }) {
             DataManager.practiceWithBoardImages()
         }
-        rows += Item("Reset zoom", R.drawable.ic_fit, enabled = hasPoses) { canvas.resetPoseZoom() }
         rows += Item(if (PracticeTimer.plan != null) "Class…  (running)" else "Timed class…", R.drawable.ic_class) {
             main.post { showClassMenuAt(x, y) }
         }
         rows += Item(if (PracticeTimer.memory) "Memory mode  ✓" else "Memory mode", R.drawable.ic_memory) { toggleMemory() }
         rows += Item("Practice history", R.drawable.ic_chart) { host.showHistory() }
-        rows += Item("Back to board", R.drawable.ic_image) { DataManager.setMode(DataManager.MODE_BOARD) }
-        rows += host.extraMenuItems()
+        rows += Item("Reset zoom", R.drawable.ic_fit, enabled = hasPoses) { canvas.resetPoseZoom() }
         rows += Item("Clear practice list", R.drawable.ic_delete, danger = true, enabled = hasPoses, confirm = "Tap again to clear practice") {
             DataManager.clearPractice()
         }
+        rows += host.extraMenuItems()
         menu.show(x, y, rows)
+    }
+
+    /** The picture (or PDF page) on screen in practice goes onto the board as well. */
+    private fun poseToBoard() {
+        when (val pose = DataManager.currentPose()) {
+            is Pose.Image -> {
+                DataManager.addToBoard(pose.image)
+                host.toast("Added to the board")
+            }
+            is Pose.PdfPage -> Importer.pageToBoard(root.context, pose.docId, pose.page)
+            null -> {}
+        }
     }
 
     // ---------------------------------------------------------------- PDF reader tools

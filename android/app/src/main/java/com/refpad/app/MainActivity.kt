@@ -221,20 +221,14 @@ class MainActivity : Activity(), BoardController.Host {
         return true
     }
 
+    /** The last row of every ⋮ menu: Settings (highlighted when an update is waiting). */
     override fun extraMenuItems(): List<MenuCard.Item> {
-        val items = arrayListOf(MenuCard.Item("Float over other apps", R.drawable.ic_float) { startFloating() })
-        if (AppUpdater.isEnabled(this)) {
-            items += MenuCard.Item("Check for updates", R.drawable.ic_reset) { AppUpdater.checkNow(this) }
-            val auto = AppUpdater.autoCheck(this)
-            items += MenuCard.Item(if (auto) "Check for updates daily  ✓" else "Check for updates daily", R.drawable.ic_history) {
-                AppUpdater.setAutoCheck(this, !auto)
-                toast(if (auto) "RefPad won't check for updates by itself" else "RefPad checks for updates once a day")
+        val update = AppUpdater.availableVersion(this)
+        return listOf(
+            MenuCard.Item(if (update != null) "Settings  ·  update $update" else "Settings", R.drawable.ic_settings, highlight = update != null) {
+                startActivity(Intent(this, SettingsActivity::class.java))
             }
-        }
-        items += MenuCard.Item("Privacy policy", R.drawable.ic_info) {
-            startActivity(Intent(this, PrivacyActivity::class.java))
-        }
-        return items
+        )
     }
 
     override fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()

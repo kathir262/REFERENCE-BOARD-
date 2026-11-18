@@ -44,6 +44,40 @@ object AppUpdater {
     class Release(val version: String, val notes: String, val apkUrl: String, val shaUrl: String, val size: Long)
 
     private val main = Handler(Looper.getMainLooper())
+    private val listeners = ArrayList<() -> Unit>()
+    private const val KEY_AVAILABLE = "update_available"
+
+    fun addListener(l: () -> Unit) {
+        if (!listeners.contains(l)) listeners.add(l)
+    }
+
+    fun removeListener(l: () -> Unit) {
+        listeners.remove(l)
+    }
+
+    /** A newer version found by the last check (and not skipped), or null. Shown as a dot on ⋮ and in Settings. */
+    fun availableVersion(context: Context): String? {
+        if (!isEnabled(context)) return null
+        val p = prefs(context)
+        val v = p.getString(KEY_AVAILABLE, null) ?: return null
+        if (v == p.getString("skip_version", "")) return null
+        val cur = parseVersion(BuildConfig.VERSION_NAME) ?: return null
+        val new = parseVersion(v) ?: return null
+        return if (compare(new, cur) > 0) v else null
+    }
+
+    private fun remember(context: Context, rel: Release?) {
+        val e = prefs(context).edit()
+        if (rel == null) e.remove(KEY_AVAILABLE) else e.putString(KEY_AVAILABLE, rel.version)
+        e.apply()
+        for (l in listeners.toTypedArray()) l()
+    }
+
+    /** True while a check or download is running. */
+    val isBusy: Boolean get() = busy
+
+    /** When the last successful check was (0 = never). */
+    fun lastCheck(context: Context): Long = prefs(context).getLong("last_update_check", 0L)
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "refpad-update") }
     private var busy = false
 
@@ -77,7 +111,10 @@ object AppUpdater {
         if (System.currentTimeMillis() - p.getLong("last_update_check", 0L) < 20L * 3600 * 1000) return
         check(activity) { rel, error ->
             // Only a check that reached GitHub counts; offline, it simply tries again next time RefPad opens.
-            if (error == null) p.edit().putLong("last_update_check", System.currentTimeMillis()).apply()
+            if (error == null) {
+                p.edit().putLong("last_update_check", System.currentTimeMillis()).apply()
+                remember(activity, rel)
+            }
             if (rel != null && rel.version != p.getString("skip_version", "")) offer(activity, rel, manual = false)
         }
     }
@@ -88,7 +125,10 @@ object AppUpdater {
         DataManager.setStatus("Checking for updates…")
         check(activity) { rel, error ->
             DataManager.setStatus(null)
-            prefs(activity).edit().putLong("last_update_check", System.currentTimeMillis()).apply()
+            if (error == null) {
+                prefs(activity).edit().putLong("last_update_check", System.currentTimeMillis()).apply()
+                remember(activity, rel)
+            }
             when {
                 error != null -> DataManager.toast(error)
                 rel == null -> DataManager.toast("You have the latest version (${BuildConfig.VERSION_NAME})")
@@ -169,6 +209,7 @@ object AppUpdater {
             .setNegativeButton("Later", null)
         if (!manual) b.setNeutralButton("Skip this version") { _, _ ->
             prefs(activity).edit().putString("skip_version", rel.version).apply()
+            for (l in listeners.toTypedArray()) l()
         }
         b.show()
     }

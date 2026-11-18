@@ -28,6 +28,8 @@ class MenuCard(private val host: FrameLayout, private val compact: Boolean) {
         val enabled: Boolean = true,
         /** If set, the first tap shows this text and only the second tap runs [action]. */
         val confirm: String? = null,
+        /** Drawn in the accent colour (for example "Settings · update available"). */
+        val highlight: Boolean = false,
         val action: () -> Unit
     ) : Row()
 
@@ -89,10 +91,26 @@ class MenuCard(private val host: FrameLayout, private val compact: Boolean) {
         if (wasShowing) onShowingChanged?.invoke(false)
     }
 
+    /** The status bar / navigation bar sizes over the menu host (the app draws behind them). */
+    private fun systemBars(): Pair<Int, Int> {
+        val insets = host.rootWindowInsets ?: return 0 to 0
+        return if (android.os.Build.VERSION.SDK_INT >= 30) {
+            val i = insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+            i.top to i.bottom
+        } else {
+            @Suppress("DEPRECATION")
+            insets.systemWindowInsetTop to insets.systemWindowInsetBottom
+        }
+    }
+
     private fun place(v: View, ax: Float, ay: Float) {
         if (card !== v) return
         val margin = dp(8)
-        val maxH = host.height - 2 * margin
+        // Keep the whole menu between the status bar and the navigation bar, so no row hides under them.
+        val (barTop, barBottom) = systemBars()
+        val top = barTop + margin
+        val bottom = host.height - barBottom - margin
+        val maxH = bottom - top
         if (maxH > 0 && v.height > maxH) {
             v.layoutParams = v.layoutParams.apply { height = maxH }
         }
@@ -100,9 +118,9 @@ class MenuCard(private val host: FrameLayout, private val compact: Boolean) {
         val w = v.width
         val x = (ax - dp(20)).coerceIn(margin.toFloat(), max(margin, host.width - w - margin).toFloat())
         val below = ay + dp(4)
-        val y = if (below + h + margin <= host.height) below else ay - h - dp(4)
+        val y = if (below + h <= bottom) below else ay - h - dp(4)
         v.translationX = x
-        v.translationY = y.coerceIn(margin.toFloat(), max(margin, host.height - h - margin).toFloat())
+        v.translationY = y.coerceIn(top.toFloat(), max(top, bottom - h).toFloat())
         v.pivotX = (ax - x).coerceIn(0f, w.toFloat())
         v.pivotY = 0f
         v.scaleX = 0.94f
@@ -122,7 +140,8 @@ class MenuCard(private val host: FrameLayout, private val compact: Boolean) {
     private fun item(row: Item) = TextView(ctx).apply {
         text = row.label
         textSize = if (compact) 13.5f else 15f
-        setTextColor(ctx.getColor(if (row.danger) R.color.danger else R.color.text_primary))
+        setTextColor(ctx.getColor(if (row.danger) R.color.danger else if (row.highlight) R.color.accent else R.color.text_primary))
+        if (row.highlight) typeface = Typeface.DEFAULT_BOLD
         gravity = Gravity.CENTER_VERTICAL
         minHeight = dp(if (compact) 40 else 48)
         setPadding(dp(12), 0, dp(14), 0)
@@ -132,7 +151,9 @@ class MenuCard(private val host: FrameLayout, private val compact: Boolean) {
             icon.setBounds(0, 0, dp(20), dp(20))
             setCompoundDrawablesRelative(icon, null, null, null)
         }
-        compoundDrawableTintList = ColorStateList.valueOf(ctx.getColor(if (row.danger) R.color.danger else R.color.text_secondary))
+        compoundDrawableTintList = ColorStateList.valueOf(
+            ctx.getColor(if (row.danger) R.color.danger else if (row.highlight) R.color.accent else R.color.text_secondary)
+        )
         isEnabled = row.enabled
         alpha = if (row.enabled) 1f else 0.38f
         var armed = false

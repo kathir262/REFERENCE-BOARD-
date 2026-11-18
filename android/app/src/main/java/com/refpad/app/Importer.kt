@@ -86,12 +86,15 @@ object Importer {
     }
 
     /** Copies one page of a viewer PDF onto the board as an image. */
-    fun pageToBoard(context: Context, doc: ViewerDoc, page: Int) {
+    fun pageToBoard(context: Context, doc: ViewerDoc, page: Int) = pageToBoard(context, doc.docId, page)
+
+    /** Copies one page of a stored PDF (reader or practice) onto the board as a picture. */
+    fun pageToBoard(context: Context, docId: String, page: Int) {
         val app = context.applicationContext
         DataManager.setStatus("Adding page ${page + 1} to the board…")
         Storage.io.execute {
             try {
-                val bmp = PdfRenderer(ParcelFileDescriptor.open(Storage.pdfFile(doc.docId), ParcelFileDescriptor.MODE_READ_ONLY)).use { r ->
+                val bmp = PdfRenderer(ParcelFileDescriptor.open(Storage.pdfFile(docId), ParcelFileDescriptor.MODE_READ_ONLY)).use { r ->
                     r.openPage(page).use { PdfHelper.renderPage(it, BOARD_PDF_LONG_SIDE) }
                 }
                 val image = ImageLoader.store(bmp)
