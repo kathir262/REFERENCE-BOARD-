@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QWidget
 
 from refpad.core import pdf
 from refpad.ui import theme
+from refpad.ui.widgets import pinch_step
 
 GAP = 14
 SIDE = 24
@@ -33,6 +34,7 @@ class PdfView(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
+        self.grabGesture(Qt.GestureType.PinchGesture)
         self.pad_top = 0
         self.pad_bottom = 0
         self.pad_left = 0          # room taken by the page list on the left
@@ -604,6 +606,14 @@ class PdfView(QWidget):
             self.update()
 
     # ------------------------------------------------------------------ input
+
+    def event(self, e):
+        step, at = pinch_step(self, e)
+        if step is not None:   # two-finger pinch zooms
+            if step != 1.0:
+                self.zoom_by(step, at)
+            return True
+        return super().event(e)
 
     def wheelEvent(self, e):
         d = e.angleDelta()

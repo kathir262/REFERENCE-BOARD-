@@ -42,6 +42,13 @@ OPACITIES = (1.0, 0.85, 0.7, 0.55)
 EDGE = 5   # resize border of the floating window
 SIDES = ("bottom", "left", "right")
 BOARD_DIRECT_PAGES = 30   # a PDF this short goes onto the board without asking which pages
+# No two of these can match the same key press (Qt then treats the press as ambiguous and does nothing):
+# Ctrl+Shift+= arrives as Ctrl++, Shift+= as +, and number-pad keys fall back to the plain ones.
+ZOOM_IN_KEYS = ["Ctrl+=", "Ctrl++", "=", "+"]
+ZOOM_OUT_KEYS = ["Ctrl+-", "Ctrl+_", "-", "_"]
+# Windows key codes of the =/+ and -/_ keys, on the main keyboard and the number pad (a last resort for
+# keys that arrive in a form no shortcut above matches, e.g. from some macro pads)
+VK_ZOOM_IN, VK_ZOOM_OUT = (0xBB, 0x6B), (0xBD, 0x6D)
 BUBBLE = 48   # the folded tool bar
 
 
@@ -126,8 +133,9 @@ class MainWindow(QWidget):
         self.a_select_all = A("Select all", "arrange", lambda: self.board.select_all(), "Ctrl+A")
         self.a_front = A("Bring to front", "arrange", lambda: self.state.bring_to_front(self.board.selected), "PgUp")
         self.a_back = A("Send to back", "arrange", lambda: self.state.send_to_back(self.board.selected), "PgDown")
-        self.a_zoom_in = A("Zoom in", "zoom", lambda: self.zoom(1.25), ["Ctrl+=", "Ctrl++", "+"])
-        self.a_zoom_out = A("Zoom out", "zoom", lambda: self.zoom(0.8), ["Ctrl+-", "-"])
+        # Every usual zoom key, so the same shortcut (or tablet key, macro pad) as in a drawing app works here too.
+        self.a_zoom_in = A("Zoom in", "zoom", lambda: self.zoom(1.25), ZOOM_IN_KEYS)
+        self.a_zoom_out = A("Zoom out", "zoom", lambda: self.zoom(0.8), ZOOM_OUT_KEYS)
         self.a_undo = A("Undo", "undo", self.state.undo, "Ctrl+Z", "Undo")
         self.a_redo = A("Redo", "redo", self.state.redo, ["Ctrl+Y", "Ctrl+Shift+Z"], "Redo")
         self.a_crop = A("Crop", "crop", self.toggle_crop, "C", "Crop the selected image", checkable=True)
@@ -296,6 +304,10 @@ class MainWindow(QWidget):
         dl.addWidget(grip, 0, Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight)
         self.dock.hide()
         root.addWidget(self.dock)
+        # The floating window shows a resize arrow on its thin edge. Without a pointer of their own, the parts
+        # inside inherited that arrow and kept it (a pen crossing the edge left it on the whole window).
+        for w in (self.top, self.fheader, self.content, self.dock):
+            w.setCursor(Qt.CursorShape.ArrowCursor)
 
     def _toolbar(self, compact: bool, mode: str) -> AdaptiveToolbar:
         tb = AdaptiveToolbar(compact, floating=not compact, parent=None if compact else self.content)
@@ -903,6 +915,18 @@ class MainWindow(QWidget):
             self.board.zoom_step(factor)
         elif mode == PDF:
             self.pdf.zoom_by(factor)
+        else:
+            self.practice.zoom_by(factor)
+
+    def keyPressEvent(self, e):
+        """Zoom keys that no shortcut caught (the views pass keys they don't use up to here)."""
+        vk = e.nativeVirtualKey()
+        if vk in VK_ZOOM_IN or e.key() in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
+            self.zoom(1.25)
+        elif vk in VK_ZOOM_OUT or e.key() in (Qt.Key.Key_Minus, Qt.Key.Key_Underscore):
+            self.zoom(0.8)
+        else:
+            super().keyPressEvent(e)
 
     # ================================================================== practice actions
 
@@ -1643,6 +1667,10 @@ class MainWindow(QWidget):
         if p.y() >= self.height() - EDGE - 2:
             e |= Qt.Edge.BottomEdge
         return e if e != Qt.Edge(0) else None
+
+    def leaveEvent(self, e):
+        self.unsetCursor()
+        super().leaveEvent(e)
 
     def mouseMoveEvent(self, e):
         edges = self._edges(e.position().toPoint())

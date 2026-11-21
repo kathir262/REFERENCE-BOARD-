@@ -928,6 +928,9 @@ class BoardView(QWidget):
         e.accept()
 
     def event(self, e):
+        if e.type() == QEvent.Type.NativeGesture and e.gestureType() == Qt.NativeGestureType.ZoomNativeGesture:
+            self._zoom_at(1.0 + e.value(), e.position())   # touchpad pinch
+            return True
         if e.type() == QEvent.Type.Gesture:
             pinch = e.gesture(Qt.GestureType.PinchGesture)
             if pinch is not None:

@@ -1,5 +1,5 @@
 """Building blocks shared by the main window and the floating window."""
-from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QPoint, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QKeySequence, QPainter, QPen
 from PySide6.QtWidgets import (QButtonGroup, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QMenu,
                                QPushButton, QSizePolicy, QToolButton, QVBoxLayout, QWidget, QWidgetAction)
@@ -66,6 +66,19 @@ def separator(compact: bool) -> QFrame:
     line.setStyleSheet(f"background: {theme.STROKE_STRONG};")
     line.setProperty("separator", True)
     return line
+
+
+def pinch_step(widget, e):
+    """(zoom step, point) for a two-finger pinch on a touch screen, pen display or touchpad; (None, None) for
+    any other event. The views zoom with it the same way on every tab."""
+    t = e.type()
+    if t == QEvent.Type.NativeGesture and e.gestureType() == Qt.NativeGestureType.ZoomNativeGesture:
+        return 1.0 + e.value(), e.position()
+    if t == QEvent.Type.Gesture:
+        g = e.gesture(Qt.GestureType.PinchGesture)
+        if g is not None:
+            return (g.scaleFactor() or 1.0), QPointF(widget.mapFromGlobal(g.centerPoint().toPoint()))
+    return None, None
 
 
 # ----------------------------------------------------------------------------- menus
