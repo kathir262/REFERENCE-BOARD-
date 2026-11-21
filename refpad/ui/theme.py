@@ -170,6 +170,15 @@ QProgressBar {{ background: {RAISED}; border: none; border-radius: 4px; height: 
 QProgressBar::chunk {{ background: {ACCENT}; border-radius: 4px; }}
 QLabel#DialogTitle {{ font-size: 18px; font-weight: 700; }}
 QLabel#Muted {{ color: {TEXT_2}; }}
+QLabel#Section {{ color: {MUTED}; font-size: 11px; font-weight: 700; padding-top: 12px; }}
+QFrame#UpdateCard {{ background: rgba(250, 204, 21, 0.10); border: 1px solid {ACCENT}; border-radius: 12px; }}
+QFrame#UpdateCard QLabel {{ background: transparent; }}
+QScrollArea#SettingsScroll {{ background: transparent; border: none; }}
+QWidget#SettingsBody {{ background: transparent; }}
+QToolButton#ToolsBubble {{ background: {ACCENT}; border-radius: 24px; padding: 0; }}
+QToolButton#ToolsBubble:hover {{ background: #FDD835; }}
+QToolButton#ToolsBubble:pressed {{ background: {ACCENT_PRESSED}; }}
+QWidget#MenuTools {{ background: transparent; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
 QScrollBar::handle:vertical {{ background: {STROKE_STRONG}; border-radius: 4px; min-height: 30px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}

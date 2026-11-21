@@ -37,6 +37,18 @@ def is_board_file(path: str) -> bool:
     return path.lower().endswith((EXT, ".bee"))
 
 
+_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+
+
+def clean_name(name: str) -> str:
+    """A board name that also works as a Windows file name ('' when nothing usable is left)."""
+    s = "".join("-" if c in '<>:"/\\|?*' or ord(c) < 32 else c for c in (name or ""))
+    s = " ".join(s.split()).strip(" .")[:80].strip(" .")
+    if s.split(".")[0].upper() in _RESERVED:
+        s = "_" + s
+    return s
+
+
 # ----------------------------------------------------------------------------- saving
 
 def write_board(path: str, items_json: list, view):

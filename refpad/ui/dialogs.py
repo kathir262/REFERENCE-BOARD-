@@ -4,8 +4,8 @@ import time
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QPixmap
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QHBoxLayout, QLabel, QProgressBar, QPushButton,
-                               QTextBrowser, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QDialog, QFrame, QHBoxLayout, QLabel,
+                               QProgressBar, QPushButton, QScrollArea, QTextBrowser, QVBoxLayout, QWidget)
 
 from refpad import __version__, paths
 from refpad.core import images, updater
@@ -137,6 +137,189 @@ class AboutDialog(QDialog):
                 self.status.setText(f"RefPad {result.version_text} is available.")
                 self.accept()
                 self.open_update(result)
+
+        images.run_async(work, done)
+
+
+WEBSITE = "https://huashijie-pro.vercel.app/apps/refpad.html"
+
+
+def _section(text: str) -> QLabel:
+    lab = QLabel(text.upper())
+    lab.setObjectName("Section")
+    return lab
+
+
+def _choices(options, current, on_pick) -> QWidget:
+    """A row of round toggle buttons (like the Board / Practice / PDF tabs); exactly one is on."""
+    row = QWidget()
+    lay = QHBoxLayout(row)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(6)
+    group = QButtonGroup(row)
+    group.setExclusive(True)
+    for key, label in options:
+        b = QPushButton(label)
+        b.setCheckable(True)
+        b.setChecked(key == current)
+        b.setProperty("segment", True)
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        b.clicked.connect(lambda _=False, k=key: on_pick(k))
+        group.addButton(b)
+        lay.addWidget(b)
+    lay.addStretch(1)
+    return row
+
+
+class SettingsDialog(QDialog):
+    """Everything you set once, in one place (the same sections as the Android app's Settings screen)."""
+
+    def __init__(self, win):
+        super().__init__(win)
+        self.win = win
+        self.setWindowTitle("Settings")
+        self.resize(560, 660)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 16)
+        outer.setSpacing(10)
+        scroll = QScrollArea(objectName="SettingsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        body = QWidget(objectName="SettingsBody")
+        lay = QVBoxLayout(body)
+        lay.setContentsMargins(24, 20, 24, 8)
+        lay.setSpacing(10)
+        lay.addWidget(_title("Settings"))
+
+        # Updates
+        lay.addWidget(_section("Updates"))
+        self.card = QFrame(objectName="UpdateCard")
+        cl = QHBoxLayout(self.card)
+        cl.setContentsMargins(14, 10, 10, 10)
+        self.card_text = QLabel("")
+        self.card_text.setWordWrap(True)
+        self.card_btn = _button("Update now", "primary")
+        self.card_btn.clicked.connect(self._open_update)
+        cl.addWidget(self.card_text, 1)
+        cl.addWidget(self.card_btn)
+        lay.addWidget(self.card)
+        self.status = _muted("")
+        row = QHBoxLayout()
+        self.check_btn = _button("Check for updates")
+        self.check_btn.clicked.connect(self._check)
+        row.addWidget(self.check_btn)
+        row.addWidget(self.status, 1)
+        lay.addLayout(row)
+        self.auto = QCheckBox("Check for updates automatically (once a day)")
+        self.auto.setChecked(bool(settings["auto_update"]))
+        self.auto.toggled.connect(lambda on: settings.__setitem__("auto_update", on))
+        lay.addWidget(self.auto)
+        if paths.is_store_app():
+            self.check_btn.hide()
+            self.auto.hide()
+            self.status.setText("The Microsoft Store keeps this copy of RefPad up to date.")
+        else:
+            self.status.setText(f"You have RefPad {__version__}.")
+        self._show_card()
+
+        # Board
+        lay.addWidget(_section("Board and practice background"))
+        lay.addWidget(_choices((("dark", "Dark"), ("grey", "Neutral grey"), ("light", "Light")),
+                               settings["board_bg"], win.set_background))
+        lay.addWidget(_muted("Neutral grey is best for judging colours and values."))
+
+        # Tool bar
+        lay.addWidget(_section("Tool bar"))
+        lay.addWidget(_choices((("bottom", "Bottom"), ("left", "Left side"), ("right", "Right side")),
+                               settings["toolbar_side"], win.set_toolbar_side))
+        hide = QCheckBox("Fold the tool bar into a small round button")
+        hide.setChecked(bool(settings["toolbar_hidden"]))
+        hide.toggled.connect(win.set_toolbar_hidden)
+        lay.addWidget(hide)
+        lay.addWidget(_muted("You can also drag the bar by its handle to the left, the right or the bottom. "
+                             "Right-click the round button for all the tools."))
+
+        # Practice
+        lay.addWidget(_section("Practice"))
+        chime = QCheckBox("Soft chime when the pose changes")
+        chime.setChecked(win.a_chime.isChecked())
+        chime.toggled.connect(lambda on: (win.a_chime.setChecked(on), win.toggle_chime()))
+        lay.addWidget(chime)
+        memory = QCheckBox("Memory mode: each pose hides after its time, then you draw it from memory")
+        memory.setChecked(win.timer.memory)
+        memory.toggled.connect(lambda on: on != win.timer.memory and win.toggle_memory())
+        lay.addWidget(memory)
+        hist = _button("Practice history")
+        hist.clicked.connect(win.show_history)
+        lay.addWidget(hist, 0, Qt.AlignmentFlag.AlignLeft)
+
+        # About
+        lay.addWidget(_section("About"))
+        lay.addWidget(_muted(f"RefPad {__version__} · reference board, timed gesture practice and PDF reader for artists. "
+                             "Free, no ads, no accounts, no tracking."))
+        about_row = QHBoxLayout()
+        for text, fn in (("About and privacy", self._about),
+                         ("Open data folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.DATA)))),
+                         ("Website", lambda: QDesktopServices.openUrl(QUrl(WEBSITE)))):
+            b = _button(text)
+            b.clicked.connect(fn)
+            about_row.addWidget(b)
+        about_row.addStretch(1)
+        lay.addLayout(about_row)
+        lay.addStretch(1)
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
+
+        bottom = QHBoxLayout()
+        bottom.setContentsMargins(24, 0, 24, 0)
+        bottom.addStretch(1)
+        close = _button("Close", "primary")
+        close.clicked.connect(self.accept)
+        bottom.addWidget(close)
+        outer.addLayout(bottom)
+
+    def _show_card(self):
+        rel = self.win.update_rel
+        self.card.setVisible(rel is not None)
+        if rel is not None:
+            self.card_text.setText(f"<b>RefPad {rel.version_text} is available.</b><br>"
+                                   "Your board, practice list and PDFs are kept.")
+
+    def _open_update(self):
+        rel = self.win.update_rel
+        if rel is not None:
+            self.accept()
+            self.win.open_update(rel)
+
+    def _about(self):
+        self.accept()
+        self.win.show_about()
+
+    def _check(self):
+        self.check_btn.setEnabled(False)
+        self.status.setText("Checking…")
+
+        def work():
+            try:
+                rel = updater.check()
+                settings["last_update_check"] = time.time()
+                return rel
+            except updater.UpdateError as e:
+                return e
+
+        def done(result):
+            if not self.isVisible():
+                return
+            self.check_btn.setEnabled(True)
+            if isinstance(result, Exception):
+                self.status.setText(str(result))
+            elif result is None:
+                self.win.set_update_available(None)
+                self.status.setText(f"You have the latest version ({__version__}).")
+            else:
+                self.win.set_update_available(result)
+                self.status.setText(f"RefPad {result.version_text} is ready to install.")
+            self._show_card()
 
         images.run_async(work, done)
 

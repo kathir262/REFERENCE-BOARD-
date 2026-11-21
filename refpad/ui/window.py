@@ -11,11 +11,11 @@ import os
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, Qt, QTimer
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QIcon, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QHBoxLayout, QLabel, QPushButton, QSizeGrip,
                                QStackedWidget, QToolButton,
-                               QVBoxLayout, QWidget)
+                               QVBoxLayout, QWidget, QWidgetAction)
 
 from refpad import __version__, paths
 from refpad.core import images, updater
@@ -30,7 +30,7 @@ from refpad.ui.board_view import BoardView
 from refpad.ui.pdf_pages import PdfPagesDialog
 from refpad.ui.pdf_panel import PdfPagesPanel, SearchBar
 from refpad.ui.pin_window import PinWindow
-from refpad.ui.dialogs import AboutDialog, UpdateDialog
+from refpad.ui.dialogs import AboutDialog, SettingsDialog, UpdateDialog
 from refpad.ui.pdf_view import PdfView
 from refpad.ui.practice_view import PracticeView
 from refpad.ui.widgets import (AdaptiveToolbar, EmptyState, Hud, IconButton, Segments, StatusChip, ToolButton, header,
@@ -40,6 +40,9 @@ IMAGE_FILTER = "Pictures (*.png *.jpg *.jpeg *.jfif *.webp *.bmp *.gif *.tif *.t
 PDF_FILTER = "PDF files (*.pdf)"
 OPACITIES = (1.0, 0.85, 0.7, 0.55)
 EDGE = 5   # resize border of the floating window
+SIDES = ("bottom", "left", "right")
+BOARD_DIRECT_PAGES = 30   # a PDF this short goes onto the board without asking which pages
+BUBBLE = 48   # the folded tool bar
 
 
 class Content(QWidget):
@@ -54,6 +57,9 @@ class Content(QWidget):
 
     def chip_bottom(self):
         return self.win.chip_bottom()
+
+    def chip_left(self, chip_w: int):
+        return self.win.chip_left(chip_w)
 
 
 class Dock(QWidget):
@@ -73,6 +79,9 @@ class MainWindow(QWidget):
         self.state, self.timer, self.engine, self.importer = state, timer, engine, importer
         self.float_mode = False
         self.pinned = False
+        self.update_rel = None     # a newer RefPad found on GitHub
+        self._grips = []
+        self._grip_drag = None
         self.setWindowTitle("RefPad")
         self.setWindowIcon(QIcon(str(paths.resource("refpad/assets/refpad.ico"))))
         self.setAcceptDrops(True)
@@ -102,6 +111,7 @@ class MainWindow(QWidget):
         self.a_pdf = A("PDF", "pdf", lambda: self.pick_pdf(None), tip="Add a PDF", accent=True)
         self.a_open_any = A("Open", "folder", self.open_any, "Ctrl+O", "Open a board (or a PDF in the PDF reader)")
         self.a_new_board = A("New board", "add", lambda: self.files.new_board(), "Ctrl+N")
+        self.a_rename = A("Rename board…", "note", lambda: self.files.rename(), "F2")
         self.a_save = A("Save board", "copy", lambda: self.files.save(), "Ctrl+S")
         self.a_save_as = A("Save board as…", "copy", lambda: self.files.save_as(), "Ctrl+Shift+S")
         self.a_flip = A("Flip", "flip", self.flip_selected, "H", "Flip horizontally", checkable=True)
@@ -165,10 +175,13 @@ class MainWindow(QWidget):
         self.a_pin = A("Keep window on top", "float", self.toggle_pin, "Ctrl+Shift+T", checkable=True)
         self.a_fullscreen = A("Full screen", "open_full", self.toggle_fullscreen, "F11")
         self.a_about = A("About RefPad and privacy", "info", self.show_about, "F1")
-        self.a_updates = A("Check for updates…", "reset", self.show_about)
+        self.a_settings = A("Settings", "settings", self.show_settings, "Ctrl+,")
+        self.a_hide_bar = A("Hide", "tools_hide", lambda: self.set_toolbar_hidden(True),
+                            tip="Fold the tool bar into a small round button")
         self.a_chime = A("Chime when the pose changes", "timer", self.toggle_chime, checkable=True)
         self.a_chime.setChecked(bool(settings["chime"]))
         self.board_actions = [self.a_undo, self.a_redo, self.a_crop, self.a_note, self.a_picker, self.a_lock, self.a_export,
+                              self.a_rename,
                               self.a_image, self.a_flip, self.a_bw, self.a_rotate, self.a_rotate_left, self.a_copy,
                               self.a_delete, self.a_arrange, self.a_select_all, self.a_front, self.a_back]
         self.practice_actions = [self.a_class, self.a_memory, self.a_history,
@@ -256,6 +269,18 @@ class MainWindow(QWidget):
         self.page_label_c = QLabel("", objectName="PageLabel")
         self.hud_c = Hud(compact=True)
         self.bars = {m: self._toolbar(False, m) for m in (BOARD, PRACTICE, PDF)}
+        # The folded tool bar: click to unfold, right-click for every tool
+        self.bubble = QToolButton(self.content, objectName="ToolsBubble")
+        self.bubble.setIcon(theme.icon("tools_show", theme.ON_ACCENT))
+        self.bubble.setIconSize(QSize(24, 24))
+        self.bubble.setFixedSize(BUBBLE, BUBBLE)
+        self.bubble.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.bubble.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.bubble.setToolTip("Show the tool bar  ·  right-click for all the tools")
+        self.bubble.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.bubble.clicked.connect(lambda: self.set_toolbar_hidden(False))
+        self.bubble.customContextMenuRequested.connect(lambda _p: self.show_tools_menu())
+        self.bubble.hide()
         root.addWidget(self.content, 1)
 
         # Bottom row of the floating window
@@ -278,6 +303,12 @@ class MainWindow(QWidget):
         def T(action, rank=None, accent=False, danger=False):
             return tb.add(ToolButton(action, compact, accent, danger), rank)
 
+        if not compact:   # handle: drag the bar to the left, the right or the bottom (click: the same choices)
+            grip = IconButton("drag", "Drag to move the tool bar to the left, the right or the bottom", 30, theme.MUTED)
+            grip.setCursor(Qt.CursorShape.SizeAllCursor)
+            grip.installEventFilter(self)
+            self._grips.append(grip)
+            tb.add(grip)
         if mode == BOARD:
             T(self.a_image, accent=True)
             T(self.a_pdf, accent=True)
@@ -331,44 +362,80 @@ class MainWindow(QWidget):
             T(self.a_bookmark, 3)
             T(self.a_to_board, 1)
             T(self.a_pdf_practise, 0)
+        if not compact:
+            tb.add_separator()
+            T(self.a_hide_bar)
         tb.finish()
         tb.hide()
         return tb
 
+    def toolbar_side(self) -> str:
+        side = settings["toolbar_side"]
+        return side if side in SIDES else "bottom"
+
+    def toolbar_folded(self) -> bool:
+        """The full window's tool bar is folded into the round button (the floating window keeps its tools)."""
+        return bool(settings["toolbar_hidden"]) and not self.float_mode
+
     def layout_overlays(self):
         w, h = self.content.width(), self.content.height()
-        self.stack.setGeometry(0, 0, w, h)
-        bar = None if self.float_mode else self.bars.get(self.state.mode)
-        pad_bottom = 0
+        folded = self.toolbar_folded()
+        bar = None if self.float_mode or folded else self.bars.get(self.state.mode)
+        side = self.toolbar_side()
+        pad_bottom = left = right = 0
         for m, b in self.bars.items():
             if b is not bar and not b.isHidden():
                 b.hide()
         if bar is not None:
-            bw = bar.fit(max(200, w - 16))
-            bh = bar.sizeHint().height()
-            bar.setGeometry((w - bw) // 2, h - bh + 2, bw, bh)
+            bar.set_side(side)
+            if bar.vertical:   # a column at the side; the board gets narrower instead of going under it
+                bh = bar.fit(max(160, h + 8))
+                bw = bar.sizeHint().width()
+                y = (h - bh) // 2
+                if side == "left":
+                    bar.setGeometry(-4, y, bw, bh)
+                    left = bw - 14
+                else:
+                    bar.setGeometry(w - bw + 4, y, bw, bh)
+                    right = bw - 14
+            else:
+                bw = bar.fit(max(200, w - 16))
+                bh = bar.sizeHint().height()
+                bar.setGeometry((w - bw) // 2, h - bh + 2, bw, bh)
+                pad_bottom = bh - 14
             bar.show()
             bar.raise_()
-            pad_bottom = bh - 14
+        self.stack.setGeometry(left, 0, w - left - right, h)
+        self._area = (left, w - left - right)
+        self.bubble.setVisible(folded)
+        if folded:
+            x = w - BUBBLE - 18 if side == "right" else 18
+            self.bubble.move(x, h - BUBBLE - 18)
+            self.bubble.raise_()
         self._pad_bottom = pad_bottom
         self.board.pad_bottom = pad_bottom
         self.practice.pad_bottom = pad_bottom
-        show_list = self.state.mode == PDF and self.a_page_list.isChecked() and self.pdf.ready and w > 560
+        show_list = self.state.mode == PDF and self.a_page_list.isChecked() and self.pdf.ready and w - left - right > 560
         self.page_list.setVisible(show_list)
         if show_list:
-            self.page_list.setGeometry(0, 0, PdfPagesPanel.WIDTH, h - pad_bottom - 6)
+            self.page_list.setGeometry(left, 0, PdfPagesPanel.WIDTH, h - pad_bottom - 6)
             self.page_list.raise_()
         self.pdf.set_padding(0, pad_bottom, PdfPagesPanel.WIDTH if show_list else 0)
         if self.state.mode != PDF and not self.search_bar.isHidden():
             self.search_bar.hide()
         if not self.search_bar.isHidden():
             self.search_bar.adjustSize()
-            sw = min(self.search_bar.sizeHint().width(), w - 24)
-            self.search_bar.setGeometry(w - sw - 18, 12, sw, self.search_bar.sizeHint().height())
+            sw = min(self.search_bar.sizeHint().width(), w - left - right - 24)
+            self.search_bar.setGeometry(w - right - sw - 18, 12, sw, self.search_bar.sizeHint().height())
             self.search_bar.raise_()
         if not self.empty.isHidden():
-            self.empty.place(w, h, 0, pad_bottom)
+            self.empty.place(w - left - right, h, 0, pad_bottom)
+            self.empty.move(self.empty.x() + left, self.empty.y())
         self.chip.reposition()
+
+    def chip_left(self, chip_w: int) -> int:
+        left, area_w = getattr(self, "_area", (0, self.content.width()))
+        return left + (area_w - chip_w) // 2
 
     def chip_bottom(self) -> int:
         return self.content.height() - getattr(self, "_pad_bottom", 0) - 14
@@ -511,6 +578,8 @@ class MainWindow(QWidget):
         self.timer.runningChanged.connect(lambda _r: self._sync_practice())
 
     def eventFilter(self, obj, e):
+        if obj in self._grips:
+            return self._grip_event(obj, e)
         if e.type() == QEvent.Type.Resize and obj in (self.top, self.fheader):
             self._fit_headers()
             return False
@@ -520,6 +589,109 @@ class MainWindow(QWidget):
         if obj is self.fheader and e.type() == QEvent.Type.MouseButtonDblClick:
             return True
         return super().eventFilter(obj, e)
+
+    # ================================================================== tool bar position
+
+    def _grip_event(self, grip, e) -> bool:
+        """Dragging the tool bar's handle: it jumps to the left, the right or the bottom as you drag.
+        A click without dragging shows the same choices as a menu."""
+        t = e.type()
+        if t == QEvent.Type.MouseButtonPress and e.button() == Qt.MouseButton.LeftButton:
+            self._grip_drag = [e.globalPosition().toPoint(), False]
+            return True
+        if t == QEvent.Type.MouseMove and self._grip_drag is not None:
+            g = e.globalPosition().toPoint()
+            if not self._grip_drag[1] and (g - self._grip_drag[0]).manhattanLength() < 12:
+                return True
+            self._grip_drag[1] = True
+            p = self.content.mapFromGlobal(g)
+            w = max(1, self.content.width())
+            side = "left" if p.x() < w * 0.3 else "right" if p.x() > w * 0.7 else "bottom"
+            if side != self.toolbar_side():
+                self.set_toolbar_side(side, quiet=True)
+            return True
+        if t == QEvent.Type.MouseButtonRelease and self._grip_drag is not None:
+            moved = self._grip_drag[1]
+            self._grip_drag = None
+            if moved:
+                self.state.notify(self._side_text(self.toolbar_side()))
+            else:
+                QTimer.singleShot(0, lambda: self.show_toolbar_menu(grip))
+            return True
+        return t in (QEvent.Type.MouseButtonDblClick, QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease)
+
+    @staticmethod
+    def _side_text(side: str) -> str:
+        return {"left": "Tool bar on the left", "right": "Tool bar on the right"}.get(side, "Tool bar at the bottom")
+
+    def set_toolbar_side(self, side: str, quiet: bool = False):
+        side = side if side in SIDES else "bottom"
+        settings["toolbar_side"] = side
+        self.layout_overlays()
+        if not quiet:
+            self.state.notify(self._side_text(side))
+
+    def set_toolbar_hidden(self, on: bool):
+        on = bool(on)
+        if on == bool(settings["toolbar_hidden"]):
+            return
+        settings["toolbar_hidden"] = on
+        self.layout_overlays()
+        if on and not self.float_mode:
+            self.state.notify("Tool bar folded · click the round button to open it, right-click it for every tool")
+
+    def show_toolbar_menu(self, anchor=None):
+        m = menu(self)
+        header(m, "Tool bar")
+        current = self.toolbar_side()
+        for key, label in (("bottom", "At the bottom"), ("left", "On the left side"), ("right", "On the right side")):
+            a = item(m, label, "drag", lambda k=key: self.set_toolbar_side(k))
+            a.setCheckable(True)
+            a.setChecked(key == current)
+        item(m, "Fold into a round button", "tools_hide", lambda: self.set_toolbar_hidden(True))
+        if anchor is not None:
+            size = m.sizeHint()
+            if current == "left":
+                at = anchor.mapToGlobal(QPoint(anchor.width() + 8, 0))
+            elif current == "right":
+                at = anchor.mapToGlobal(QPoint(-size.width() - 8, 0))
+            else:
+                at = anchor.mapToGlobal(QPoint(0, -size.height() - 8))
+            m.exec(at)
+        else:
+            m.exec(self._menu_point())
+
+    def show_tools_menu(self):
+        """Right-click on the folded tool bar: every tool of this tab."""
+        mode = self.state.mode
+        bar = self.bars.get(mode)
+        m = menu(self)
+        header(m, {BOARD: "Board tools", PRACTICE: "Practice tools", PDF: "PDF tools"}.get(mode, "Tools"))
+        for w, _ in bar._entries:
+            act = w.defaultAction() if isinstance(w, QToolButton) else None
+            if act is not None and act is not self.a_hide_bar:
+                m.addAction(act)
+        m.addSeparator()
+        item(m, "Show the tool bar", "tools_show", lambda: self.set_toolbar_hidden(False))
+        size = m.sizeHint()
+        b = self.bubble
+        x = b.width() - size.width() if self.toolbar_side() == "right" else 0
+        m.exec(b.mapToGlobal(QPoint(x, -size.height() - 8)))
+
+    def _quick_row(self, m, actions):
+        """A row of icon buttons at the top of a right-click menu (used while the tool bar is folded)."""
+        row = QWidget(objectName="MenuTools")
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(6, 2, 6, 4)
+        lay.setSpacing(2)
+        for act, danger in actions:
+            b = ToolButton(act, compact=True, danger=danger)
+            b.clicked.connect(m.close)
+            lay.addWidget(b)
+        lay.addStretch(1)
+        wa = QWidgetAction(m)
+        wa.setDefaultWidget(row)
+        m.addAction(wa)
 
     # ================================================================== mode & state sync
 
@@ -792,7 +964,7 @@ class MainWindow(QWidget):
         header(m, f"Open “{Path(path).stem}” in")
         item(m, "PDF reader", "pdf", lambda: self.importer.pdf_to_reader(path))
         item(m, "Practice (every page)", "timer", lambda: self.importer.pdf_to_practice(path))
-        item(m, "Board (choose pages)", "image", lambda: self.choose_pdf_pages(path))
+        item(m, "Board (the pictures of its pages)", "image", lambda: self.choose_pdf_pages(path))
         m.exec(at or self._menu_point())
 
     def open_paths(self, paths_, at: QPoint = None):
@@ -871,9 +1043,14 @@ class MainWindow(QWidget):
         self._fit_headers()
 
     def choose_pdf_pages(self, path: str, preselect=None):
-        """Lets you pick which pages of a PDF go to the board (all, page numbers, or by clicking)."""
+        """A short PDF goes straight onto the board, every page. For a longer one (or when you asked to choose)
+        you pick the pages: all, page numbers, or by clicking."""
         def go(info):
             self.chip.fade_out()
+            if preselect is None and 0 < info.count <= BOARD_DIRECT_PAGES:
+                self.state.set_mode(BOARD)
+                self.importer.pdf_pages_to_board(path, range(info.count))
+                return
             dlg = PdfPagesDialog(self, path, info.count, self.engine, preselect)
             if dlg.exec() == QDialog.DialogCode.Accepted and dlg.pages:
                 self.state.set_mode(BOARD)
@@ -1074,16 +1251,34 @@ class MainWindow(QWidget):
         item(m, "Open a PDF to read", "pdf", lambda: self.pick_pdf(PDF))
         self._popup(m, anchor_widget=anchor)
 
+    def tools_shown(self) -> bool:
+        """True while the tool bar (or the floating window's tool row) is on screen, so menus can leave out
+        what it already has."""
+        return self.float_mode or not self.toolbar_folded()
+
+    def _settings_item(self, m):
+        rel = self.update_rel
+        if rel is not None and not paths.is_store_app():
+            a = item(m, f"Settings  ·  RefPad {rel.version_text} is ready", "settings", self.show_settings,
+                     shortcut="Ctrl+,")
+            a.setIcon(theme.icon("settings", theme.ACCENT))
+            f = a.font()
+            f.setBold(True)
+            a.setFont(f)
+        else:
+            item(m, "Settings", "settings", self.show_settings, shortcut="Ctrl+,")
+
     def show_main_menu(self, anchor):
         st = self.state
         m = menu(self)
         if st.mode == BOARD:
-            self.files.fill_menu(m)
-            self._fill_board_menu(m)
+            # The board name (top left) has every board command; here only the everyday ones, unless it's hidden.
+            self.files.fill_menu(m, short=self.title.isVisible())
+            self._fill_board_menu(m, short=self.tools_shown())
         elif st.mode == PRACTICE:
-            self._fill_practice_menu(m)
+            self._fill_practice_menu(m, short=self.tools_shown())
         else:
-            self._fill_pdf_menu(m, self.pdf.current_page)
+            self._fill_pdf_menu(m, self.pdf.current_page, short=self.tools_shown())
         header(m, "Window")
         if self.float_mode:
             item(m, "Back to the full window", "open_full", self.toggle_float, shortcut="Ctrl+T")
@@ -1093,62 +1288,59 @@ class MainWindow(QWidget):
             item(m, "Float on top of other apps", "float", self.toggle_float, shortcut="Ctrl+T")
             m.addAction(self.a_pin)
             item(m, "Exit full screen" if self.isFullScreen() else "Full screen", "open_full", self.toggle_fullscreen, shortcut="F11")
-        bgm = menu(m)
-        bgm.setTitle("Background")
-        bgm.setIcon(theme.icon("palette", theme.TEXT_2))
-        for key, label in (("dark", "Dark"), ("grey", "Neutral grey (for judging colours)"), ("light", "Light")):
-            a = item(bgm, label, "palette", lambda k=key: self.set_background(k))
-            a.setCheckable(True)
-            a.setChecked(settings["board_bg"] == key)
-        m.addMenu(bgm)
+            if self.toolbar_folded():
+                item(m, "Show the tool bar", "tools_show", lambda: self.set_toolbar_hidden(False))
         m.addSeparator()
-        if not paths.is_store_app():
-            item(m, "Check for updates…", "reset", self.show_about)
-        item(m, "About RefPad and privacy", "info", self.show_about, shortcut="F1")
+        self._settings_item(m)
         self._popup(m, anchor_widget=anchor)
 
-    def _fill_board_menu(self, m):
+    def _fill_board_menu(self, m, short: bool = False):
+        """short: without what the tool bar already has."""
         st = self.state
         has = bool(st.items)
         header(m, "Board")
         item(m, "Paste", "paste", self.paste, shortcut="Ctrl+V")
-        item(m, "Add images", "image", lambda: self.pick_images(BOARD), shortcut="Ctrl+I")
-        item(m, "Add PDF pages…", "pdf", lambda: self.pick_pdf(BOARD))
+        if not short:
+            item(m, "Add images", "image", lambda: self.pick_images(BOARD), shortcut="Ctrl+I")
+            item(m, "Add PDF pages…", "pdf", lambda: self.pick_pdf(BOARD))
         item(m, "Import folder", "folder", lambda: self.pick_folder(BOARD))
-        item(m, "Fit everything", "fit", self.board.fit_all, enabled=has, shortcut="F")
-        item(m, "Arrange in rows", "arrange", self.arrange, enabled=has, shortcut="Ctrl+Shift+A")
+        if not short:
+            item(m, "Fit everything", "fit", self.board.fit_all, enabled=has, shortcut="F")
+            item(m, "Arrange in rows", "arrange", self.arrange, enabled=has, shortcut="Ctrl+Shift+A")
         item(m, "Select all", "arrange", self.board.select_all, enabled=has, shortcut="Ctrl+A")
         item(m, "Practise with these images", "timer", lambda: self.importer.board_to_practice(st.items), enabled=has)
-        item(m, "Add a note", "note", self.add_note, shortcut="N")
-        item(m, "Pick a colour", "picker", self.toggle_picker, enabled=has, shortcut="I")
-        item(m, "Undo", "undo", st.undo, enabled=st.can_undo, shortcut="Ctrl+Z")
-        item(m, "Redo", "redo", st.redo, enabled=st.can_redo, shortcut="Ctrl+Y")
+        if not short:
+            item(m, "Add a note", "note", self.add_note, shortcut="N")
+            item(m, "Pick a colour", "picker", self.toggle_picker, enabled=has, shortcut="I")
+            item(m, "Undo", "undo", st.undo, enabled=st.can_undo, shortcut="Ctrl+Z")
+            item(m, "Redo", "redo", st.redo, enabled=st.can_redo, shortcut="Ctrl+Y")
         item(m, "Export board as PNG…", "export", self.export_board, enabled=has, shortcut="Ctrl+E")
         item(m, "Clear board", "delete", st.clear_board, enabled=has, danger=True)
 
     def _board_context(self, it, pos):
         at = pos.toPoint()
         m = menu(self)
+        short = self.tools_shown()   # the tool bar has Copy, Flip, Rotate, Crop, B&W and Delete
         if it is None:
-            self._fill_board_menu(m)
+            self._fill_board_menu(m, short=short)
             m.exec(at)
             return
         sel = self.board.selected
         pics = [i for i in sel if not i.is_note]
         if it.is_note and len(sel) <= 1:
             header(m, "Note")
+            if not short:
+                self._quick_row(m, ((self.a_copy, False), (self.a_delete, True)))
             item(m, "Edit note", "note", lambda: self.board.edit_note(it))
-            item(m, "Copy text", "copy", self.copy_selected, shortcut="Ctrl+C")
         else:
             header(m, "Image" if len(sel) <= 1 else f"{len(sel)} images")
-            item(m, "Copy", "copy", self.copy_selected, shortcut="Ctrl+C")
-            item(m, "Flip horizontally", "flip", self.flip_selected, shortcut="H")
-            item(m, "Rotate right", "rotate", lambda: self.rotate_selected(1), shortcut="R")
+            if not short:
+                self._quick_row(m, ((self.a_copy, False), (self.a_flip, False), (self.a_rotate, False),
+                                    (self.a_crop, False), (self.a_bw, False), (self.a_delete, True)))
             item(m, "Rotate left", "rotate_left", lambda: self.rotate_selected(-1), shortcut="Shift+R")
-            item(m, "Crop…", "crop", lambda: self.board.start_crop(it), enabled=len(sel) == 1 and not it.locked, shortcut="C")
             if any(i.crop for i in pics):
                 item(m, "Show the whole picture", "fit", lambda: self.board.reset_crop(pics))
-        self._look_menus(m, sel, pics)
+        self._look_menus(m, sel, pics, with_bw=False)
         item(m, "Unlock" if it.locked else "Lock in place", "lock", self.toggle_lock, shortcut="L")
         if not it.is_note:
             item(m, "Zoom to this image", "zoom", lambda: self.board.fit_item(it))
@@ -1159,11 +1351,9 @@ class MainWindow(QWidget):
             item(m, "Practise with " + ("this image" if len(pics) <= 1 else "these images"), "timer",
                  lambda: self.importer.board_to_practice(pics))
             item(m, "Reset size and look", "reset", lambda: self._edit_selected(lambda i: i.reset()))
-        m.addSeparator()
-        item(m, "Delete", "delete", self.delete_selected, danger=True, shortcut="Del")
         m.exec(at)
 
-    def _look_menus(self, m, sel, pics):
+    def _look_menus(self, m, sel, pics, with_bw: bool = True):
         """Opacity, black & white, value steps, squint and grid sub-menus."""
         last = sel[-1]
 
@@ -1181,7 +1371,8 @@ class MainWindow(QWidget):
 
         if pics:
             p = pics[-1]
-            item(m, "Show in colour" if p.gray else "Black & white", "bw", self.bw_selected, shortcut="G")
+            if with_bw:
+                item(m, "Show in colour" if p.gray else "Black & white", "bw", self.bw_selected, shortcut="G")
             vs = sub("Value steps", "values")
             for n, label in ((0, "Off"), (2, "2 values"), (3, "3 values"), (4, "4 values"), (5, "5 values")):
                 choice(vs, label, "values", p.values, n, lambda i, n=n: setattr(i, "values", n) if not i.is_note else None)
@@ -1197,10 +1388,21 @@ class MainWindow(QWidget):
             choice(os_, f"{pct}%", "opacity", round(last.opacity * 100), pct,
                    lambda i, v=pct / 100: setattr(i, "opacity", v))
 
-    def _fill_practice_menu(self, m):
+    def current_pose(self):
+        st = self.state
+        return st.practice[st.practice_index] if 0 <= st.practice_index < len(st.practice) else None
+
+    def pose_to_board(self):
+        pose = self.current_pose()
+        if pose is not None:
+            self.importer.pose_to_board(pose)
+
+    def _fill_practice_menu(self, m, short: bool = False):
+        """short: without what the tool bar already has (Memory, Class)."""
         st = self.state
         has = bool(st.practice)
         header(m, "Practice")
+        item(m, "Add this pose to the board", "image", self.pose_to_board, enabled=self.current_pose() is not None)
         item(m, "Open a PDF art book", "pdf", lambda: self.pick_pdf(PRACTICE))
         item(m, "Add images", "image", lambda: self.pick_images(PRACTICE))
         item(m, "Practise a folder of pictures", "folder", lambda: self.pick_folder(PRACTICE))
@@ -1208,16 +1410,16 @@ class MainWindow(QWidget):
         item(m, "Shuffle poses", "reset", st.shuffle_practice, enabled=len(st.practice) > 1)
         item(m, "Restart this pose", "timer", self.timer.restart, enabled=has, shortcut="Home")
         item(m, "Reset zoom", "fit", self.practice.reset_zoom, enabled=has, shortcut="F")
-        m.addAction(self.a_chime)
-        m.addAction(self.a_memory)
-        item(m, "Timed class…", "class", self.show_class_menu, enabled=has)
+        if not short:
+            m.addAction(self.a_memory)
+            item(m, "Timed class…", "class", self.show_class_menu, enabled=has)
         item(m, "Practice history", "chart", self.show_history)
         item(m, "Back to the board", "image", lambda: st.set_mode(BOARD))
         item(m, "Clear practice list", "delete", st.clear_practice, enabled=has, danger=True)
 
     def show_practice_menu(self, at: QPoint = None):
         m = menu(self)
-        self._fill_practice_menu(m)
+        self._fill_practice_menu(m, short=self.tools_shown())
         self._popup(m, None if at else self.a_p_add, at=at)
 
     def show_interval_menu(self):
@@ -1275,28 +1477,32 @@ class MainWindow(QWidget):
         from refpad.ui.dialogs import HistoryDialog
         HistoryDialog(self).exec()
 
-    def _fill_pdf_menu(self, m, page: int):
+    def _fill_pdf_menu(self, m, page: int, short: bool = False):
+        """The page's board and practice choices first; short: without what the tool bar already has."""
         st = self.state
         doc = st.doc
         header(m, doc.title if doc else "PDF")
-        item(m, "Open another PDF…", "pdf", lambda: self.pick_pdf(PDF))
-        if doc is not None and self.pdf.ready:
+        ready = doc is not None and self.pdf.ready
+        if ready:
             item(m, f"Add page {page + 1} to the board", "image", lambda: self.page_to_board(page))
             item(m, "Add pages to the board…", "image", lambda: self.choose_pdf_pages(doc.path, [page]))
             item(m, f"Practise from page {page + 1}", "timer", lambda: self.practise_from(page))
-            item(m, self.pdf.fit_label(), "fit", self.pdf.toggle_fit, shortcut="F")
+        item(m, "Open another PDF…", "pdf", lambda: self.pick_pdf(PDF))
+        if ready:
             item(m, "Go to first page", "page_up", lambda: self.pdf.go_to_page(0), shortcut="Home")
             item(m, "Go to last page", "page_down", lambda: self.pdf.go_to_page(self.pdf.page_count - 1), shortcut="End")
             item(m, "Remove bookmark" if page in doc.bookmarks else f"Bookmark page {page + 1}", "bookmark",
                  lambda: self.toggle_bookmark(page), shortcut="Ctrl+D")
-            item(m, "Snip part of a page onto the board", "snip", lambda: self.pdf.set_snipping(True), shortcut="S")
-            item(m, "Find text…", "search", self.open_search, shortcut="Ctrl+F")
-            a = item(m, "Two pages side by side", "spread", lambda: self.pdf.set_spread(not self.pdf.spread))
-            a.setCheckable(True)
-            a.setChecked(self.pdf.spread)
-            a = item(m, "Page list", "pages", self.toggle_page_list)
-            a.setCheckable(True)
-            a.setChecked(self.a_page_list.isChecked())
+            if not short:
+                item(m, self.pdf.fit_label(), "fit", self.pdf.toggle_fit, shortcut="F")
+                item(m, "Snip part of a page onto the board", "snip", lambda: self.pdf.set_snipping(True), shortcut="S")
+                item(m, "Find text…", "search", self.open_search, shortcut="Ctrl+F")
+                a = item(m, "Two pages side by side", "spread", lambda: self.pdf.set_spread(not self.pdf.spread))
+                a.setCheckable(True)
+                a.setChecked(self.pdf.spread)
+                a = item(m, "Page list", "pages", self.toggle_page_list)
+                a.setCheckable(True)
+                a.setChecked(self.a_page_list.isChecked())
             if doc.bookmarks:
                 header(m, "Bookmarks")
                 for b in doc.bookmarks[:12]:
@@ -1312,7 +1518,7 @@ class MainWindow(QWidget):
 
     def show_pdf_menu(self, at: QPoint = None, page: int = None):
         m = menu(self)
-        self._fill_pdf_menu(m, self.pdf.current_page if page is None else page)
+        self._fill_pdf_menu(m, self.pdf.current_page if page is None else page, short=self.tools_shown())
         self._popup(m, at=at)
 
     def show_recent_menu(self):
@@ -1516,8 +1722,33 @@ class MainWindow(QWidget):
     def show_about(self):
         AboutDialog(self, self.open_update).exec()
 
+    def show_settings(self):
+        SettingsDialog(self).exec()
+
     def open_update(self, rel):
+        self.set_update_available(rel)
         UpdateDialog(self, rel, self._before_restart).exec()
+        if settings["skip_version"] == rel.version_text:   # "Skip this version": no more reminders for it
+            self.set_update_available(None)
+
+    def set_update_available(self, rel):
+        """A newer RefPad (or None): a yellow dot on the More buttons and a highlighted Settings row."""
+        self.update_rel = rel
+        tip = f"More  ·  RefPad {rel.version_text} is available" if rel is not None else "More"
+        for b in (self.btn_menu, self.btn_menu_c):
+            b.setIcon(self._badged("more") if rel is not None else theme.icon("more", theme.TEXT))
+            b.setToolTip(tip)
+
+    def _badged(self, name: str) -> QIcon:
+        dpr = max(1.0, self.devicePixelRatioF())
+        pm = theme.icon(name, theme.TEXT).pixmap(QSize(20, 20), dpr)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(QPen(theme.color(theme.SURFACE), 1.6))
+        p.setBrush(theme.color(theme.ACCENT))
+        p.drawEllipse(QRectF(12.5, 0.8, 7, 7))
+        p.end()
+        return QIcon(pm)
 
     def _before_restart(self):
         self._save_geometry()
@@ -1542,8 +1773,12 @@ class MainWindow(QWidget):
                 return
             settings["last_update_check"] = time.time()
             if rel is not None and rel.version_text != settings["skip_version"]:
-                self.chip.show_message(f"RefPad {rel.version_text} is available", False,
-                                       lambda: self.open_update(rel), "UPDATE")
+                self.set_update_available(rel)
+                if self.isActiveWindow() and not self.float_mode and QApplication.activeModalWidget() is None:
+                    self.open_update(rel)   # Update now / Later / Skip this version
+                else:   # busy drawing next to RefPad: a quiet note instead of a pop-up
+                    self.chip.show_message(f"RefPad {rel.version_text} is available", False,
+                                           lambda: self.open_update(rel), "UPDATE")
 
         images.run_async(work, done)
 

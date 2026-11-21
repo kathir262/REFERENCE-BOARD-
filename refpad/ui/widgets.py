@@ -107,6 +107,8 @@ class AdaptiveToolbar(QWidget):
         super().__init__(parent)
         self.compact = compact
         self.floating = floating       # painted as a pill over the content
+        self.vertical = False          # a column at the left or right side instead of a row
+        self.side = "bottom"
         self._entries = []             # (widget, hide_rank or None)
         self._hidden: list = []
         self.lay = QHBoxLayout(self)
@@ -121,6 +123,28 @@ class AdaptiveToolbar(QWidget):
         self._shadow_pad = pad
         if not floating:
             self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def set_side(self, side: str):
+        """bottom: a row (the default); left / right: a column at that side of the window."""
+        self.side = side
+        vertical = side in ("left", "right")
+        if vertical == self.vertical:
+            return
+        self.vertical = vertical
+        pad = self._shadow_pad
+        self.lay.setDirection(QHBoxLayout.Direction.TopToBottom if vertical else QHBoxLayout.Direction.LeftToRight)
+        if vertical:
+            self.lay.setContentsMargins(pad + 4, pad + 6, pad + 4, pad + 6)
+        else:
+            self.lay.setContentsMargins(pad + 6, pad + 4, pad + 6, pad + 4)
+        length = 22 if self.compact else 30
+        for w, _ in self._entries:
+            if w.property("separator"):
+                w.setFixedSize(length, 1) if vertical else w.setFixedSize(1, length)
+        for w, _ in self._entries:
+            if isinstance(w, QLabel):   # page numbers: centred in a column
+                w.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lay.invalidate()
 
     def add(self, w: QWidget, hide_rank=None):
         self._entries.append((w, hide_rank))
@@ -138,16 +162,19 @@ class AdaptiveToolbar(QWidget):
     def _natural(self) -> int:
         m = self.lay.contentsMargins()
 
-        def width(w):   # what the layout will really give it (fixed-size buttons ignore their size hint)
-            return w.sizeHint().expandedTo(w.minimumSize()).boundedTo(w.maximumSize()).width()
+        def length(w):   # what the layout will really give it (fixed-size buttons ignore their size hint)
+            s = w.sizeHint().expandedTo(w.minimumSize()).boundedTo(w.maximumSize())
+            return s.height() if self.vertical else s.width()
 
-        widths = [width(w) for w, _ in self._entries if not w.isHidden()]
+        sizes = [length(w) for w, _ in self._entries if not w.isHidden()]
         if not self.more.isHidden():
-            widths.append(width(self.more))
-        return m.left() + m.right() + sum(widths) + self.lay.spacing() * max(0, len(widths) - 1)
+            sizes.append(length(self.more))
+        ends = m.top() + m.bottom() if self.vertical else m.left() + m.right()
+        return ends + sum(sizes) + self.lay.spacing() * max(0, len(sizes) - 1)
 
     def fit(self, avail: int) -> int:
-        """Shows as many tools as fit into `avail` pixels; returns the width the bar needs."""
+        """Shows as many tools as fit into `avail` pixels; returns the length the bar needs
+        (its width, or its height when it stands at a side)."""
         self._hidden = []
         for w, _ in self._entries:
             w.setVisible(not getattr(w, "_off", False))
@@ -180,7 +207,14 @@ class AdaptiveToolbar(QWidget):
         if m.isEmpty():
             return
         size = m.sizeHint()
-        m.exec(self.more.mapToGlobal(QPoint(self.more.width() - size.width(), -size.height() - 6)))
+        b = self.more
+        if self.side == "left":
+            at = QPoint(b.width() + 6, b.height() - size.height())
+        elif self.side == "right":
+            at = QPoint(-size.width() - 6, b.height() - size.height())
+        else:
+            at = QPoint(b.width() - size.width(), -size.height() - 6)
+        m.exec(b.mapToGlobal(at))
 
     def paintEvent(self, e):
         if not self.floating:
@@ -368,7 +402,8 @@ class StatusChip(QFrame):
         if par is None:
             return
         bottom = getattr(par, "chip_bottom", lambda: par.height() - 16)()
-        self.move((par.width() - self.width()) // 2, bottom - self.height())
+        left = getattr(par, "chip_left", lambda w: (par.width() - w) // 2)(self.width())
+        self.move(left, bottom - self.height())
 
     def _undo(self):
         fn, self._undo_fn = self._undo_fn, None

@@ -439,6 +439,16 @@ class State(QObject):
         self.boardFileChanged.emit()
         self.schedule_save()
 
+    def name_board(self, name: str, path=None):
+        """A new name for the board: its renamed file, or (untitled board) the name it will be saved under."""
+        if path:
+            self.board_path = path
+            self.board_suggested = ""
+        else:
+            self.board_suggested = name
+        self.boardFileChanged.emit()
+        self.schedule_save()
+
     def replace_board(self, items: list, path=None, view=None, suggested: str = ""):
         """Shows a different board (opened from a file, or a new empty one)."""
         self.items = list(items)

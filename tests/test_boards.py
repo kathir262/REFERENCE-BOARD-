@@ -161,3 +161,25 @@ def test_page_numbers(text, count, expected):
 def test_page_numbers_round_trip():
     assert pages_text([0, 1, 2, 3, 7, 10, 11]) == "1-4, 8, 11-12"
     assert parse_pages(pages_text([0, 1, 2, 3, 7, 10, 11]), 20) == [0, 1, 2, 3, 7, 10, 11]
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Chapter 3 refs", "Chapter 3 refs"),
+    ("  hands / feet: study?  ", "hands - feet- study-"),
+    ("con", "_con"),
+    ("...", ""),
+    ("a" * 100, "a" * 80),
+])
+def test_board_names_work_as_file_names(text, expected):
+    assert boards.clean_name(text) == expected
+
+
+def test_name_and_rename_untitled_board(app):
+    from refpad.core.store import State
+    st = State()
+    st.replace_board([], None, None)
+    assert st.board_name == "Untitled board"
+    st.name_board("Hands")
+    assert st.board_name == "Hands" and st.board_path is None
+    st.name_board("Hands v2", "C:/boards/Hands v2.refpad")
+    assert st.board_name == "Hands v2" and st.board_suggested == ""

@@ -6,7 +6,7 @@ Only an untitled board with pictures asks whether to save it first.
 import os
 from pathlib import Path
 
-from PySide6.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
 from refpad.core import boards, images
 from refpad.core.store import BOARD
@@ -132,8 +132,67 @@ class BoardFiles:
         def go():
             self.state.replace_board([], None, None)
             self.state.set_mode(BOARD)
-            self.state.notify("New board")
+            name = self.ask_name("New board", "Name your new board", "")
+            if name:
+                self.state.name_board(name)
+            self.state.notify(f"New board “{name}”" if name else "New board")
         self._before_switch(go)
+
+    # ------------------------------------------------------------------ naming
+
+    @property
+    def has_name(self) -> bool:
+        return bool(self.state.board_path or self.state.board_suggested)
+
+    def ask_name(self, title: str, label: str, current: str):
+        """Asks for a board name. None = cancelled or left empty."""
+        dlg = QInputDialog(self.win)
+        dlg.setWindowTitle(title)
+        dlg.setLabelText(label + "\n(for example: Chapter 3 references)")
+        dlg.setTextValue(current)
+        dlg.setOkButtonText("OK")
+        dlg.setCancelButtonText("Skip" if not current else "Cancel")
+        dlg.resize(380, dlg.sizeHint().height())
+        if dlg.exec() != QInputDialog.DialogCode.Accepted:
+            return None
+        return boards.clean_name(dlg.textValue()) or None
+
+    def rename(self):
+        """Names an untitled board, or renames the board's file (in the same folder)."""
+        st = self.state
+        named = self.has_name
+        name = self.ask_name("Rename board" if named else "Name this board",
+                             "New name for this board" if named else "Name this board", st.board_name if named else "")
+        if name is None or name == st.board_name:
+            return
+        old = st.board_path
+        if not old:
+            st.name_board(name)
+            return st.notify(f"Board named “{name}”")
+        new = str(Path(old).with_name(name + boards.EXT))
+        same_file = os.path.normcase(os.path.abspath(new)) == os.path.normcase(os.path.abspath(old))
+        if os.path.exists(new) and not same_file:
+            return st.notify(f"There is already a board called “{name}” in that folder")
+        if self._saving or self._queue:
+            return st.notify("Still saving – try again in a moment")
+        if os.path.exists(old):
+            try:
+                os.replace(old, new)
+            except OSError:
+                return st.notify("This board's file can't be renamed (is it open in another app?)")
+            self._forget(old)
+            st.name_board(name, new)
+            self._remember(new)
+        else:   # the file is gone (moved or deleted): the next save writes it under the new name
+            st.name_board(name, new)
+            if st.items:
+                self._write(new)
+        st.notify(f"Renamed to “{name}”")
+
+    def _forget(self, path: str):
+        key = os.path.normcase(os.path.abspath(path))
+        settings["recent_boards"] = [p for p in settings["recent_boards"] or []
+                                     if os.path.normcase(os.path.abspath(p)) != key]
 
     def open_dialog(self):
         folder = boards.default_folder()
@@ -190,13 +249,17 @@ class BoardFiles:
 
     # ------------------------------------------------------------------ menu
 
-    def fill_menu(self, m, with_header: bool = True):
+    def fill_menu(self, m, with_header: bool = True, short: bool = False):
+        """short: the everyday commands only (the board name at the top left has the full list)."""
         st = self.state
         if with_header:
             header(m, st.board_name + ("  •  not saved" if st.board_dirty and st.items else ""))
+        item(m, "Rename board…" if self.has_name else "Name this board…", "note", self.rename, shortcut="F2")
         item(m, "New board", "add", self.new_board, shortcut="Ctrl+N")
         item(m, "Open board…", "folder", self.open_dialog, shortcut="Ctrl+O")
         item(m, "Save board", "copy", self.save, enabled=bool(st.items) or bool(st.board_path), shortcut="Ctrl+S")
+        if short:
+            return
         item(m, "Save board as…", "copy", self.save_as, enabled=bool(st.items), shortcut="Ctrl+Shift+S")
         rec = self.recent()
         current = os.path.normcase(os.path.abspath(st.board_path)) if st.board_path else ""

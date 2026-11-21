@@ -189,6 +189,23 @@ class Importer:
 
         self.engine.render_once(path, page, BOARD_PAGE_SIDE, rendered)
 
+    def pose_to_board(self, pose: Pose):
+        """The picture of a practice pose, added to the board (the practice list keeps it)."""
+        st = self.state
+        if pose.kind == "pdf":
+            return self.page_to_board(pose.ref, pose.page)
+        if pose.kind == "file":
+            return self.images_to_board([pose.ref])
+        from PySide6.QtGui import QImageReader
+        from refpad import paths
+        size = QImageReader(str(paths.IMG / pose.ref)).size()
+        if not size.isValid():
+            return st.notify("That picture can't be found any more")
+        item = BoardItem(pose.ref, size.width(), size.height())
+        item.fit_new()
+        st.add_items([item])
+        st.notify("Pose added to the board")
+
     def region_to_board(self, path: str, page: int, frac):
         """A snipped part of a PDF page, as a sharp picture on the board."""
         st = self.state

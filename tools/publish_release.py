@@ -127,9 +127,14 @@ def main():
         files += windows_files(v)
     if args.only != "windows":
         files += android_files(v)
+    # The website's buttons point at the newest release, so a one-platform release also carries the other
+    # platform's current download (under its fixed name only, which the in-app updaters never pick).
     if args.only == "android" and (DIST / "RefPad-Setup.exe").exists():
-        # The website's Windows button points at the newest release; keep the current installer there too.
         files.append(DIST / "RefPad-Setup.exe")
+    if args.only == "windows":
+        if not (DIST / "RefPad-Android.apk").exists():
+            sys.exit("Missing dist/RefPad-Android.apk (the current Android download for the website's button).")
+        files.append(DIST / "RefPad-Android.apk")
     notes_file = ROOT / "release-notes" / f"{v}.md"
     if not notes_file.exists():
         sys.exit(f"Write the release notes first: {notes_file}")
