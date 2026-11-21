@@ -1085,15 +1085,34 @@ class PdfViewerView @JvmOverloads constructor(
         val lastRow = firstRowBelow(height.toFloat())
         val first = rowStart[firstRow]
         val last = rowEnd[lastRow] - 1
-        if (!force && first == requestedFirst && last == requestedLast && requestedDoc === d) return
+        // Zoomed out, pages are small on screen: half-size renderings look the same and need a quarter
+        // of the memory, so even a screen full of pages stays light.
+        val shown = RectF()
+        pageRect(first, shown)
+        val side = if (max(shown.width(), shown.height()) <= PdfPages.RENDER_LONG_SIDE * 0.45f)
+            PdfPages.RENDER_LONG_SIDE / 2 else PdfPages.RENDER_LONG_SIDE
+        if (!force && first == requestedFirst && last == requestedLast && requestedDoc === d && side == requestedSide) return
         requestedFirst = first
         requestedLast = last
         requestedDoc = d
+        requestedSide = side
         val list = ArrayList<Pose.PdfPage>(last - first + 5)
         for (i in first..last) list.add(Pose.PdfPage(d.docId, i))
         if (lastRow + 1 < rowStart.size) for (i in rowStart[lastRow + 1] until rowEnd[lastRow + 1]) list.add(Pose.PdfPage(d.docId, i))
         if (firstRow - 1 >= 0) for (i in rowStart[firstRow - 1] until rowEnd[firstRow - 1]) list.add(Pose.PdfPage(d.docId, i))
-        PdfPages.focus(this, list)
+        PdfPages.focus(this, list, side)
+    }
+
+    private var requestedSide = 0
+
+    /** Keeps the newest sharp tiles within about two screens of pixels; the oldest go first. */
+    private fun trimTiles() {
+        val budget = 2.2 * width.coerceAtLeast(1) * height.coerceAtLeast(1)
+        var total = tiles.sumOf { it.bitmap.width.toDouble() * it.bitmap.height }
+        while (tiles.size > 1 && total > budget) {
+            val t = tiles.removeAt(0)
+            total -= t.bitmap.width.toDouble() * t.bitmap.height
+        }
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -1208,7 +1227,7 @@ class PdfViewerView @JvmOverloads constructor(
                 ) { bmp ->
                     if (bmp != null && token == detailToken && zoom == z && doc === d) {
                         tiles.add(Tile(d.docId, page, z, area, bmp))
-                        while (tiles.size > 4) tiles.removeAt(0)
+                        trimTiles()
                         invalidate()
                     }
                 }

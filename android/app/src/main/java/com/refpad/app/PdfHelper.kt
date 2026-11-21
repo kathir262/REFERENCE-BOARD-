@@ -73,9 +73,21 @@ object PdfPages {
         Handler(it.looper)
     }
 
+    /** Pages no screen needs right now, kept in case they come back (dropped first when it is full). */
     private val cache = object : LruCache<String, Bitmap>(CACHE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap) = value.width * value.height * 4
     }
+
+    /**
+     * Pages a screen is showing (or is about to): held here, outside the size-limited cache, so they are
+     * never dropped while on screen. When they shared the cache, two-page view needed more pages than it
+     * holds: each new page pushed out one on screen, which was drawn again and pushed out the next, so the
+     * pages kept blinking.
+     */
+    private val pinned = HashMap<String, Bitmap>()
+
+    /** The rendering size (long side, pixels) each wanted page should have. */
+    private val sideWanted = HashMap<String, Int>()
 
     // Main-thread state
     private val inFlight = HashSet<String>()
@@ -94,7 +106,12 @@ object PdfPages {
 
     private fun key(docId: String, page: Int) = "$docId#$page"
 
-    fun get(docId: String, page: Int): Bitmap? = cache.get(key(docId, page))
+    fun get(docId: String, page: Int): Bitmap? {
+        val k = key(docId, page)
+        return pinned[k] ?: cache.get(k)
+    }
+
+    private fun longSide(b: Bitmap) = max(b.width, b.height)
 
     fun hasFailed(docId: String, page: Int) = failed.contains(key(docId, page))
 
@@ -110,14 +127,38 @@ object PdfPages {
      * Declares which pages a screen ([owner]) needs right now (most important first) and renders any that are missing.
      * The full screen and the floating window can both ask at the same time.
      */
-    fun focus(owner: Any, pages: List<Pose.PdfPage>) {
+    fun focus(owner: Any, pages: List<Pose.PdfPage>, side: Int = RENDER_LONG_SIDE) {
         wantedByOwner[owner] = pages.mapTo(HashSet()) { key(it.docId, it.page) }
-        wanted = wantedByOwner.values.flatMapTo(HashSet()) { it }
+        updateWanted()
+        for (p in pages) {
+            val k = key(p.docId, p.page)
+            sideWanted[k] = max(side, if (wantedByOwner.size > 1) sideWanted[k] ?: 0 else 0)
+        }
         for (p in pages) request(p.docId, p.page)
     }
 
     fun release(owner: Any) {
-        if (wantedByOwner.remove(owner) != null) wanted = wantedByOwner.values.flatMapTo(HashSet()) { it }
+        if (wantedByOwner.remove(owner) != null) updateWanted()
+    }
+
+    /** Moves pages between the pinned set (on screen) and the cache (not needed right now). */
+    private fun updateWanted() {
+        val now = wantedByOwner.values.flatMapTo(HashSet()) { it }
+        wanted = now
+        val it = pinned.entries.iterator()
+        while (it.hasNext()) {
+            val e = it.next()
+            if (e.key !in now) {
+                it.remove()
+                cache.put(e.key, e.value)
+            }
+        }
+        sideWanted.keys.retainAll(now)
+        for (k in now) if (!pinned.containsKey(k)) cache.remove(k)?.let { pinned[k] = it }
+    }
+
+    private fun store(k: String, bmp: Bitmap) {
+        if (wanted.contains(k)) pinned[k] = bmp else cache.put(k, bmp)
     }
 
     /**
@@ -163,19 +204,27 @@ object PdfPages {
         }
     }
 
+    /**
+     * Renders a page that is missing, or that is cached smaller than the screen now wants. A page that is
+     * already there stays on screen until the sharper one is ready, so it never blanks out.
+     */
     private fun request(docId: String, page: Int) {
         val k = key(docId, page)
-        if (cache.get(k) != null || inFlight.contains(k) || failed.contains(k)) return
+        val side = sideWanted[k] ?: RENDER_LONG_SIDE
+        val have = pinned[k] ?: cache.get(k)
+        if ((have != null && longSide(have) >= side - 2) || inFlight.contains(k) || failed.contains(k)) return
         inFlight.add(k)
         worker.post {
             val stillWanted = wanted.contains(k)
-            val bmp = if (stillWanted) render(docId, page) else null
+            val bmp = if (stillWanted) render(docId, page, side) else null
             main.post {
                 inFlight.remove(k)
                 if (bmp != null) {
-                    cache.put(k, bmp)
+                    store(k, bmp)
                     for (l in listeners.toTypedArray()) l()
-                } else if (stillWanted) {
+                    // Wanted sharper meanwhile (zoomed in while it rendered): render it again at that size.
+                    if (wanted.contains(k) && longSide(bmp) < (sideWanted[k] ?: 0) - 2) request(docId, page)
+                } else if (stillWanted && get(docId, page) == null) {
                     failed.add(k)
                     for (l in listeners.toTypedArray()) l()
                 }
@@ -183,12 +232,12 @@ object PdfPages {
         }
     }
 
-    private fun render(docId: String, page: Int): Bitmap? {
+    private fun render(docId: String, page: Int, side: Int): Bitmap? {
         worker.removeCallbacks(closeIdle)
         try {
             val renderer = rendererFor(docId) ?: return null
             if (page < 0 || page >= renderer.pageCount) return null
-            val bmp = renderer.openPage(page).use { PdfHelper.renderPage(it, RENDER_LONG_SIDE) }
+            val bmp = renderer.openPage(page).use { PdfHelper.renderPage(it, side) }
             return ImageLoader.toDisplay(bmp)
         } catch (oom: OutOfMemoryError) {
             Log.w(TAG, "Out of memory rendering page $page", oom)
@@ -233,7 +282,10 @@ object PdfPages {
     fun trim(all: Boolean) {
         main.post {
             if (all) cache.evictAll() else cache.trimToSize(CACHE_BYTES / 4)
-            if (all) thumbs.evictAll()
+            if (all) {
+                pinned.clear()   // only when nothing is on screen (in the background, or on the board)
+                thumbs.evictAll()
+            }
             failed.clear()
         }
     }
