@@ -101,6 +101,7 @@ class MainWindow(QWidget):
         self._restore_geometry(False)
         if settings["float_mode"]:
             self.set_float(True, initial=True)
+        self.board.set_board_locked(bool(settings["board_locked"]))
         self._apply_mode(state.mode)
         QTimer.singleShot(7000, self._auto_check_updates)
 
@@ -143,6 +144,9 @@ class MainWindow(QWidget):
         self.a_picker = A("Colour", "picker", self.toggle_picker, "I", "Pick a colour from a picture", checkable=True)
         self.a_lock = A("Lock", "lock", self.toggle_lock, "L", "Lock the selected images in place", checkable=True)
         self.a_export = A("Export board as PNG…", "export", self.export_board, "Ctrl+E")
+        self.a_lock_board = A("Lock", "lock", self.toggle_board_lock, "Ctrl+L",
+                              "Lock the board: dragging only moves the view, pictures stay put", checkable=True)
+        self.a_lock_board.setChecked(bool(settings["board_locked"]))
         self._pins = []
         # Practice
         self.a_prev = A("Prev", "prev", self.state.prev_pose, ["Left", "A"], "Previous pose")
@@ -189,7 +193,7 @@ class MainWindow(QWidget):
         self.a_chime = A("Chime when the pose changes", "timer", self.toggle_chime, checkable=True)
         self.a_chime.setChecked(bool(settings["chime"]))
         self.board_actions = [self.a_undo, self.a_redo, self.a_crop, self.a_note, self.a_picker, self.a_lock, self.a_export,
-                              self.a_rename,
+                              self.a_rename, self.a_lock_board,
                               self.a_image, self.a_flip, self.a_bw, self.a_rotate, self.a_rotate_left, self.a_copy,
                               self.a_delete, self.a_arrange, self.a_select_all, self.a_front, self.a_back]
         self.practice_actions = [self.a_class, self.a_memory, self.a_history,
@@ -340,6 +344,7 @@ class MainWindow(QWidget):
             T(self.a_picker, 5)
             T(self.a_arrange, 0)
             T(self.a_fit, 6)
+            T(self.a_lock_board, 13)
         elif mode == PRACTICE:
             if compact:
                 tb.add(self.hud_c)
@@ -1089,6 +1094,14 @@ class MainWindow(QWidget):
         elif not self.board.start_crop():
             self.state.notify("Click one picture first, then Crop")
         self._sync_board()
+
+    def toggle_board_lock(self):
+        on = self.a_lock_board.isChecked()
+        settings["board_locked"] = on
+        self.board.set_board_locked(on)
+        self._sync_board()
+        self.state.notify("Board locked: drag to move, scroll to zoom · click Lock again to unlock" if on
+                          else "Board unlocked")
 
     def toggle_picker(self):
         self.board.set_picking(not self.board.picking)

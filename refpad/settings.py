@@ -20,6 +20,7 @@ DEFAULTS = {
     "memory_mode": False,      # practice: draw each pose from memory after it hides
     "toolbar_side": "bottom",  # where the tool bar sits in the full window: bottom, left or right
     "toolbar_hidden": False,   # tool bar folded into a small round button
+    "board_locked": False,     # Lock board: dragging only moves the view
 }
 
 

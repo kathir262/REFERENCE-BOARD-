@@ -112,6 +112,7 @@ class BoardView(QWidget):
         self.selected: list = []
         self.pad_top = 0       # parts of the view covered by bars (used when fitting)
         self.pad_bottom = 0
+        self.board_locked = False   # Lock board: dragging only moves the view
         self._drag = None
         self._space = False
         self._display = {}     # item id -> (signature, pre-scaled QImage)
@@ -552,6 +553,21 @@ class BoardView(QWidget):
     def picking(self) -> bool:
         return self._picking
 
+    def set_board_locked(self, on: bool):
+        """Lock board: dragging anywhere moves the view and the wheel or a pinch zooms; pictures can't be moved,
+        resized or selected by accident (right-click menus still work)."""
+        self.board_locked = on
+        if on:
+            if self._crop:
+                self.finish_crop()
+            if self._picking:
+                self.set_picking(False)
+            self.set_selected([])
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+        else:
+            self.unsetCursor()
+        self.update()
+
     def set_picking(self, on: bool):
         if on == self._picking:
             return
@@ -779,7 +795,8 @@ class BoardView(QWidget):
         if self._target is not None:
             self._stop_anim()
             self._camera_settled()
-        if e.button() == Qt.MouseButton.MiddleButton or (e.button() == Qt.MouseButton.LeftButton and self._space):
+        if e.button() == Qt.MouseButton.MiddleButton or (e.button() == Qt.MouseButton.LeftButton and
+                                                          (self._space or self.board_locked)):
             self._drag = {"kind": "pan", "last": pos}
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
@@ -851,7 +868,7 @@ class BoardView(QWidget):
                 self.setCursor(Qt.CursorShape.SizeAllCursor if near else
                                Qt.CursorShape.OpenHandCursor if inside else Qt.CursorShape.ArrowCursor)
                 return
-            if self._space:
+            if self._space or self.board_locked:
                 self.setCursor(Qt.CursorShape.OpenHandCursor)
             elif self._handle_hit(pos):
                 self.setCursor(Qt.CursorShape.SizeFDiagCursor)
@@ -965,11 +982,11 @@ class BoardView(QWidget):
             return
         step = 40 / self.zoom
         moves = {Qt.Key.Key_Left: (-step, 0), Qt.Key.Key_Right: (step, 0), Qt.Key.Key_Up: (0, -step), Qt.Key.Key_Down: (0, step)}
-        if e.key() in moves and not self.selected:
+        if e.key() in moves and (not self.selected or self.board_locked):
             dx, dy = moves[e.key()]
             self.animate_to(self.cx + dx * 3, self.cy + dy * 3, self.zoom)
             return
-        if e.key() in moves and self.selected:
+        if e.key() in moves and self.selected and not self.board_locked:
             dx, dy = moves[e.key()]
             f = 0.25 if e.modifiers() & Qt.KeyboardModifier.ShiftModifier else 0.05
             for it in [i for i in self.selected if not i.locked]:
